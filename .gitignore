@@ -16,6 +16,7 @@ ENV/
 .ruff_cache/
 .coverage
 htmlcov/
+.playwright-mcp/
 
 # IDE & Editor
 .vscode/

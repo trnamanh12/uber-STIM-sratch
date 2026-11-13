@@ -640,6 +640,9 @@ class UberApiClient {
   }
 
   handleTelemetryFrame(frame) {
+    if (APP_STATE.activeTrip) {
+      APP_STATE.activeTrip.state = frame.state;
+    }
     const badge = document.getElementById('live-trip-status-badge');
     badge.textContent = frame.state;
     badge.className = `status-badge-lg badge-${frame.state}`;
@@ -650,9 +653,8 @@ class UberApiClient {
       document.getElementById('live-trip-eta-headline').textContent = 'Driver arriving now!';
     } else if (frame.state === 'IN_TRANSIT') {
       document.getElementById('live-trip-eta-headline').textContent = 'Heading to destination...';
-    } else if (frame.state === 'COMPLETED') {
+    } else if (frame.state === 'DROPPED_OFF' || frame.state === 'COMPLETED') {
       document.getElementById('live-trip-eta-headline').textContent = 'You have arrived!';
-      setTimeout(() => alert('Trip Completed! Thank you for riding with Uber.'), 300);
     }
 
     if (frame.current_lat && frame.current_lon) {
@@ -705,7 +707,12 @@ class UberApiClient {
 
     // If WebSocket is alive, trigger server step
     if (APP_STATE.ws && APP_STATE.ws.readyState === WebSocket.OPEN) {
-      APP_STATE.ws.send(JSON.stringify({ command: 'SIMULATE_STEP' }));
+      const currentTripState = APP_STATE.activeTrip ? APP_STATE.activeTrip.state : 'MATCHED';
+      if (currentTripState === 'MATCHED') {
+        APP_STATE.ws.send(JSON.stringify({ action: 'start' }));
+      } else {
+        APP_STATE.ws.send(JSON.stringify({ action: 'step' }));
+      }
     }
   }
 
