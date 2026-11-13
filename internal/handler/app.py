@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from internal.domain.driver import Driver, GeoCoordinate
 from internal.domain.heatmap import H3SurgeHeatmap
 from internal.domain.ledger import Account, AccountType
+from internal.domain.routing import IntersectionNode, RoadGraph
 from internal.domain.trip import (
     IllegalStateTransitionError,
     InvariantViolationError,
@@ -36,6 +37,7 @@ from internal.repository.trip_repo import InMemoryTripRepository, TripRepository
 from internal.service.billing_service import BillingService
 from internal.service.cascading_dispatch import CascadingDispatchService
 from internal.service.matching import MatchingService, NoDriverAvailableError
+from internal.service.router import AStarRouter
 from internal.service.trip_service import TripNotFoundError, TripService
 
 
@@ -79,6 +81,26 @@ def create_app(
     # Seed default platform revenue account
     _ledger_repo.create_account(Account("ACC-PLATFORM", "UBER", AccountType.REVENUE, 0))
 
+    # Seed Road Network Graph (Central Saigon)
+    _road_graph = RoadGraph()
+    _intersections = [
+        IntersectionNode("BEN_THANH", GeoCoordinate(10.7720, 106.6980), "Ben Thanh Market"),
+        IntersectionNode("OPERA_HOUSE", GeoCoordinate(10.7765, 106.7030), "Saigon Opera House"),
+        IntersectionNode("NOTRE_DAME", GeoCoordinate(10.7798, 106.6990), "Notre Dame Cathedral"),
+        IntersectionNode("BITEXCO", GeoCoordinate(10.7715, 106.7045), "Bitexco Financial Tower"),
+        IntersectionNode("LANDMARK_81", GeoCoordinate(10.7950, 106.7220), "Landmark 81 Tower"),
+    ]
+    for n in _intersections:
+        _road_graph.add_intersection(n)
+
+    _road_graph.add_road_segment("BEN_THANH", "OPERA_HOUSE", "Le Loi Ave", 40.0, False)
+    _road_graph.add_road_segment("OPERA_HOUSE", "NOTRE_DAME", "Dong Khoi St", 35.0, False)
+    _road_graph.add_road_segment("BEN_THANH", "NOTRE_DAME", "Nam Ky Khoi Nghia", 40.0, False)
+    _road_graph.add_road_segment("OPERA_HOUSE", "BITEXCO", "Nguyen Hue Blvd", 30.0, False)
+    _road_graph.add_road_segment("BITEXCO", "LANDMARK_81", "Nguyen Huu Canh", 50.0, False)
+    _road_graph.add_road_segment("NOTRE_DAME", "LANDMARK_81", "Dien Bien Phu", 50.0, False)
+    _router = AStarRouter(_road_graph)
+
     # Store in app state
     app.state.trip_service = _trip_service
     app.state.trip_repo = _trip_repo
@@ -87,6 +109,8 @@ def create_app(
     app.state.heatmap = _heatmap
     app.state.ledger_repo = _ledger_repo
     app.state.billing_service = _billing_service
+    app.state.road_graph = _road_graph
+    app.state.router = _router
 
     # --------------------------------------------------------------------------
     # Exception Handlers: Domain Exceptions -> Standard HTTP Status Codes
@@ -305,6 +329,19 @@ def create_app(
             "account_type": acc.account_type.value,
             "balance_cents": acc.balance_cents,
             "balance_formatted": f"${acc.balance_cents / 100:.2f}",
+        }
+
+    @app.get("/api/v1/routing/directions")
+    def get_directions(origin_lat: float, origin_lon: float, dest_lat: float, dest_lon: float):
+        router: AStarRouter = app.state.router
+        origin = GeoCoordinate(lat=origin_lat, lon=origin_lon)
+        dest = GeoCoordinate(lat=dest_lat, lon=dest_lon)
+        path = router.find_shortest_path(origin, dest)
+        return {
+            "nodes": path.nodes,
+            "waypoints": [{"lat": w.lat, "lon": w.lon} for w in path.waypoints],
+            "distance_km": path.total_distance_km,
+            "duration_seconds": path.estimated_duration_seconds,
         }
 
     # --------------------------------------------------------------------------

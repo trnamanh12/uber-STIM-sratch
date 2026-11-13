@@ -65,6 +65,16 @@ from internal.domain.ledger import (
 from internal.service.billing_service import (
     BillingService,
 )
+from internal.domain.routing import (
+    RoadGraph,
+    IntersectionNode,
+    RoadEdge,
+    KinematicPath,
+    NoPathFoundError,
+)
+from internal.service.router import (
+    AStarRouter,
+)
 
 __all__ = [
     "DomainError",
@@ -104,4 +114,10 @@ __all__ = [
     "UnbalancedJournalEntryError",
     "InsufficientFundsError",
     "BillingService",
+    "RoadGraph",
+    "IntersectionNode",
+    "RoadEdge",
+    "KinematicPath",
+    "NoPathFoundError",
+    "AStarRouter",
 ]
