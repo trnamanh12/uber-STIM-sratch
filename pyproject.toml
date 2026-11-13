@@ -13,5 +13,6 @@ dependencies = [
 
 [tool.pytest.ini_options]
 testpaths = ["."]
+pythonpath = ["."]
 python_files = ["test_*.py"]
 addopts = "-v --strict-markers"

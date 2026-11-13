@@ -75,18 +75,25 @@ class TripService:
     ) -> Tuple[Trip, Driver, float]:
         """
         Use case: Matches nearest available driver and binds to trip.
+        Guarantees thread-safe atomic assignment via Optimistic Concurrency Control (OCC).
         """
-        trip = self.get_trip(trip_id)
-        driver, distance_km, eta_min = self.matching_service.match_driver_for_trip(
-            pickup=trip.origin, max_search_radius_km=max_search_radius_km
-        )
+        max_retries = 5
+        for _ in range(max_retries):
+            trip = self.get_trip(trip_id)
+            driver, distance_km, eta_min = self.matching_service.match_driver_for_trip(
+                pickup=trip.origin, max_search_radius_km=max_search_radius_km
+            )
 
-        driver.assign_to_trip(trip.trip_id)
-        trip.assign_driver(driver.driver_id)
+            expected_version = driver.version
+            driver.assign_to_trip(trip.trip_id)
 
-        self.driver_repo.update(driver)
-        self.trip_repo.save(trip)
-        return trip, driver, eta_min
+            # Atomic CAS
+            if self.driver_repo.atomic_compare_and_swap(driver.driver_id, expected_version, driver):
+                trip.assign_driver(driver.driver_id)
+                self.trip_repo.save(trip)
+                return trip, driver, eta_min
+
+        raise NoDriverAvailableError("Failed to lock driver due to concurrent dispatch contention")
 
     def driver_arrived_at_pickup(self, trip_id: str) -> Trip:
         """Use case: Driver arrived at pickup location."""

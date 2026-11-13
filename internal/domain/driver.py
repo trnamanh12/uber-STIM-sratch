@@ -51,9 +51,11 @@ class Driver:
         self.location = location
         self.state = DriverState.IDLE
         self.assigned_trip_id: Optional[str] = None
+        self.version: int = 1
 
     def update_location(self, new_location: GeoCoordinate) -> None:
         self.location = new_location
+        self.version += 1
 
     def assign_to_trip(self, trip_id: str) -> None:
         if self.state != DriverState.IDLE:
@@ -62,10 +64,13 @@ class Driver:
             )
         self.state = DriverState.ASSIGNED
         self.assigned_trip_id = trip_id
+        self.version += 1
 
     def mark_busy(self) -> None:
         self.state = DriverState.BUSY
+        self.version += 1
 
     def release(self) -> None:
         self.state = DriverState.IDLE
         self.assigned_trip_id = None
+        self.version += 1
