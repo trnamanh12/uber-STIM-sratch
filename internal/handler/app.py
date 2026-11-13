@@ -3,10 +3,12 @@ internal/handler/app.py - FastAPI Application Factory, REST Endpoints & WebSocke
 """
 
 import asyncio
+import os
 from typing import Optional
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from internal.domain.driver import Driver, GeoCoordinate
 from internal.domain.trip import (
@@ -232,5 +234,10 @@ def create_app(
                 await websocket.close()
             except Exception:
                 pass
+
+    # Mount static client UI at root
+    web_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "web")
+    if os.path.exists(web_dir):
+        app.mount("/", StaticFiles(directory=web_dir, html=True), name="web")
 
     return app

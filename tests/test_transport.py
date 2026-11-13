@@ -136,3 +136,11 @@ def test_websocket_telemetry_stream(client_fixture):
         initial_frame = websocket.receive_json()
         assert initial_frame["trip_id"] == trip_id
         assert initial_frame["state"] == "REQUESTED"
+
+
+def test_static_web_hud_served(client_fixture):
+    client, _ = client_fixture
+    res = client.get("/")
+    assert res.status_code == 200
+    assert "UBER MOBILITY ENGINE" in res.text
+    assert "<canvas id=\"mapCanvas\"" in res.text

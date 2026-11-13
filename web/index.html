@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Uber Mobility Engine - Live Telemetry HUD</title>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: #141b2d;
+      --accent: #00ff88;
+      --accent-cyan: #00e5ff;
+      --accent-amber: #ffb703;
+      --accent-red: #ff3366;
+      --text-main: #f0f4f8;
+      --text-dim: #8ba2b5;
+      --border: #232f48;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "JetBrains Mono", monospace;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    header {
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .brand-tag {
+      background: #00e5ff22;
+      color: var(--accent-cyan);
+      border: 1px solid var(--accent-cyan);
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+
+    .status-badge {
+      font-size: 13px;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 20px;
+      background: #333;
+      color: #aaa;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-badge::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .status-REQUESTED { background: #3b82f622; color: #60a5fa; }
+    .status-MATCHED { background: #8b5cf622; color: #a78bfa; }
+    .status-DRIVER_ARRIVING { background: #f59e0b22; color: #fbbf24; }
+    .status-IN_TRANSIT { background: #10b98122; color: #34d399; }
+    .status-DROPPED_OFF { background: #06b6d422; color: #22d3ee; }
+    .status-COMPLETED { background: #10b98133; color: #4ade80; border: 1px solid #4ade80; }
+    .status-CANCELLED { background: #ef444422; color: #f87171; border: 1px solid #f87171; }
+
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 16px;
+      padding: 16px;
+      overflow: hidden;
+    }
+
+    .canvas-container {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    canvas {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(circle at center, #111827 0%, #080d1a 100%);
+    }
+
+    .hud-overlay {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      background: rgba(11, 15, 25, 0.85);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border);
+      padding: 12px 16px;
+      border-radius: 6px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      font-size: 12px;
+    }
+
+    .hud-metric-label {
+      color: var(--text-dim);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      font-size: 10px;
+    }
+
+    .hud-metric-val {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--accent);
+      font-family: monospace;
+    }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow: hidden;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .card-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 12px;
+      letter-spacing: 0.5px;
+    }
+
+    .controls-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    button {
+      background: #1e293b;
+      color: var(--text-main);
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    button:hover:not(:disabled) {
+      background: #334155;
+      border-color: var(--accent-cyan);
+    }
+
+    button.primary {
+      background: var(--accent);
+      color: #052e16;
+      border-color: var(--accent);
+    }
+
+    button.primary:hover:not(:disabled) {
+      background: #00df76;
+    }
+
+    button.danger {
+      color: var(--accent-red);
+      border-color: #ef444455;
+    }
+
+    button.danger:hover:not(:disabled) {
+      background: #ef444422;
+    }
+
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .logs-card {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .logs-console {
+      flex: 1;
+      background: #070a13;
+      border: 1px solid #162033;
+      border-radius: 4px;
+      padding: 10px;
+      font-family: monospace;
+      font-size: 11px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .log-line {
+      color: #a0aec0;
+      line-height: 1.4;
+    }
+
+    .log-highlight { color: var(--accent-cyan); }
+    .log-success { color: var(--accent); }
+    .log-warn { color: var(--accent-amber); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span>UBER MOBILITY ENGINE</span>
+      <span class="brand-tag">Autonomous Core</span>
+    </div>
+    <div>
+      <span id="tripIdDisplay" style="font-family: monospace; font-size: 12px; color: var(--text-dim); margin-right: 12px;">No active trip</span>
+      <span id="statusBadge" class="status-badge">STANDBY</span>
+    </div>
+  </header>
+
+  <main>
+    <div class="canvas-container">
+      <div class="hud-overlay">
+        <div>
+          <div class="hud-metric-label">Distance</div>
+          <div id="hudDist" class="hud-metric-val">0.0 km</div>
+        </div>
+        <div>
+          <div class="hud-metric-label">Duration</div>
+          <div id="hudTime" class="hud-metric-val">0s</div>
+        </div>
+        <div>
+          <div class="hud-metric-label">Estimated Fare</div>
+          <div id="hudFare" class="hud-metric-val">$0.00</div>
+        </div>
+        <div>
+          <div class="hud-metric-label">Driver Assigned</div>
+          <div id="hudDriver" class="hud-metric-val" style="font-size: 13px; color: var(--accent-cyan);">-</div>
+        </div>
+      </div>
+      <canvas id="mapCanvas"></canvas>
+    </div>
+
+    <div class="sidebar">
+      <div class="card">
+        <div class="card-title">Trip Controls</div>
+        <div class="controls-grid">
+          <button id="btnRequest" class="primary" onclick="requestTrip()">1. Request Ride</button>
+          <button id="btnMatch" onclick="matchDriver()" disabled>2. Match Driver</button>
+          <button id="btnStart" onclick="startTrip()" disabled>3. Board Rider</button>
+          <button id="btnStep" onclick="stepSim()" disabled>4. Step Forward</button>
+          <button id="btnAuto" onclick="toggleAuto()" style="grid-column: span 2;" disabled>▶ Auto-Simulate Trip</button>
+          <button id="btnCancel" class="danger" onclick="cancelTrip()" style="grid-column: span 2;" disabled>Cancel Ride</button>
+        </div>
+      </div>
+
+      <div class="card logs-card">
+        <div class="card-title">Real-Time Event Stream</div>
+        <div id="logsConsole" class="logs-console">
+          <div class="log-line log-highlight">[*] Client initialized. Ready to request trip.</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const API_BASE = window.location.origin;
+    const WS_BASE = API_BASE.replace(/^http/, 'ws');
+
+    let currentTripId = null;
+    let ws = null;
+    let autoSimTimer = null;
+    let tripData = null;
+
+    const canvas = document.getElementById("mapCanvas");
+    const ctx = canvas.getContext("2d");
+
+    function resizeCanvas() {
+      canvas.width = canvas.parentElement.clientWidth;
+      canvas.height = canvas.parentElement.clientHeight;
+      drawMap();
+    }
+    window.addEventListener("resize", resizeCanvas);
+    setTimeout(resizeCanvas, 50);
+
+    function log(msg, type = "line") {
+      const el = document.getElementById("logsConsole");
+      const div = document.createElement("div");
+      div.className = `log-line ${type ? 'log-' + type : ''}`;
+      const time = new Date().toLocaleTimeString();
+      div.innerText = `[${time}] ${msg}`;
+      el.appendChild(div);
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function updateBadge(state) {
+      const badge = document.getElementById("statusBadge");
+      badge.className = `status-badge status-${state}`;
+      badge.innerText = state || "STANDBY";
+    }
+
+    function updateUI(data) {
+      tripData = data;
+      document.getElementById("tripIdDisplay").innerText = `Trip: ${data.trip_id}`;
+      updateBadge(data.state);
+      document.getElementById("hudDist").innerText = `${data.distance_km.toFixed(2)} km`;
+      document.getElementById("hudTime").innerText = `${data.duration_seconds.toFixed(0)}s`;
+      document.getElementById("hudFare").innerText = `$${data.fare.toFixed(2)}`;
+      document.getElementById("hudDriver").innerText = data.driver_id || "Unassigned";
+
+      // Button availability
+      document.getElementById("btnRequest").disabled = (data.state !== "COMPLETED" && data.state !== "CANCELLED");
+      document.getElementById("btnMatch").disabled = (data.state !== "REQUESTED");
+      document.getElementById("btnStart").disabled = (data.state !== "MATCHED");
+      document.getElementById("btnStep").disabled = (data.state !== "IN_TRANSIT");
+      document.getElementById("btnAuto").disabled = (data.state !== "IN_TRANSIT");
+      document.getElementById("btnCancel").disabled = (data.state === "COMPLETED" || data.state === "CANCELLED");
+
+      drawMap();
+    }
+
+    function drawMap() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const w = canvas.width;
+      const h = canvas.height;
+
+      // Draw cyber spatial grid
+      ctx.strokeStyle = "#162033";
+      ctx.lineWidth = 1;
+      const gridSize = 40;
+      for (let x = 0; x < w; x += gridSize) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+      }
+      for (let y = 0; y < h; y += gridSize) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+      }
+
+      if (!tripData) return;
+
+      // Coordinate normalization to canvas space
+      // Origin: (10.7760, 106.7000), Dest: (10.7950, 106.7250)
+      const minLat = 10.770, maxLat = 10.800;
+      const minLon = 106.695, maxLon = 106.730;
+
+      function toXY(lat, lon) {
+        const pad = 80;
+        const x = pad + ((lon - minLon) / (maxLon - minLon)) * (w - pad * 2);
+        const y = h - (pad + ((lat - minLat) / (maxLat - minLat)) * (h - pad * 2));
+        return { x, y };
+      }
+
+      const pOrigin = toXY(tripData.origin.lat, tripData.origin.lon);
+      const pDest = toXY(tripData.destination.lat, tripData.destination.lon);
+      const pCar = toXY(tripData.current_position.lat, tripData.current_position.lon);
+
+      // 1. Draw planned route corridor
+      ctx.beginPath();
+      ctx.strokeStyle = "#2563eb66";
+      ctx.lineWidth = 4;
+      ctx.setLineDash([8, 6]);
+      ctx.moveTo(pOrigin.x, pOrigin.y);
+      ctx.lineTo(pDest.x, pDest.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 2. Draw origin marker
+      ctx.fillStyle = "#10b981";
+      ctx.beginPath(); ctx.arc(pOrigin.x, pOrigin.y, 8, 0, 2 * Math.PI); ctx.fill();
+      ctx.fillStyle = "#fff"; ctx.font = "11px monospace";
+      ctx.fillText("PICKUP (Rider)", pOrigin.x + 12, pOrigin.y + 4);
+
+      // 3. Draw destination marker
+      ctx.fillStyle = "#ef4444";
+      ctx.beginPath(); ctx.arc(pDest.x, pDest.y, 8, 0, 2 * Math.PI); ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.fillText("DESTINATION", pDest.x + 12, pDest.y + 4);
+
+      // 4. Draw moving driver vehicle
+      ctx.fillStyle = "#00e5ff";
+      ctx.shadowColor = "#00e5ff";
+      ctx.shadowBlur = 15;
+      ctx.beginPath(); ctx.arc(pCar.x, pCar.y, 10, 0, 2 * Math.PI); ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "#00e5ff";
+      ctx.fillText(`VEHICLE (${tripData.driver_id || 'IDLE'})`, pCar.x + 14, pCar.y - 4);
+    }
+
+    async function requestTrip() {
+      const idempotencyKey = `web-req-${Date.now()}`;
+      log(`Sending ride request with key: ${idempotencyKey}...`, "highlight");
+
+      const payload = {
+        idempotency_key: idempotencyKey,
+        rider_id: "rider-web-client",
+        origin: { lat: 10.7760, lon: 106.7000 },
+        destination: { lat: 10.7950, lon: 106.7250 },
+        passenger_count: 1
+      };
+
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/trips`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        currentTripId = data.trip_id;
+        log(`[✓] Trip created: ${currentTripId} (State: ${data.state})`, "success");
+        updateUI(data);
+        connectWebSocket(currentTripId);
+      } catch (err) {
+        log(`[!] Failed to request trip: ${err.message}`, "warn");
+      }
+    }
+
+    async function matchDriver() {
+      if (!currentTripId) return;
+      log(`Matching nearest driver for ${currentTripId}...`, "highlight");
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/trips/${currentTripId}/match`, { method: "POST" });
+        const data = await res.json();
+        log(`[✓] Matched ${data.driver_name} (ETA: ${data.eta_minutes}m)`, "success");
+      } catch (err) {
+        log(`[!] Match error: ${err.message}`, "warn");
+      }
+    }
+
+    function startTrip() {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        log("Sending boarding confirmation to driver via WebSocket...", "highlight");
+        ws.send(JSON.stringify({ action: "start" }));
+      }
+    }
+
+    function stepSim() {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ action: "step" }));
+      }
+    }
+
+    function toggleAuto() {
+      const btn = document.getElementById("btnAuto");
+      if (autoSimTimer) {
+        clearInterval(autoSimTimer);
+        autoSimTimer = null;
+        btn.innerText = "▶ Auto-Simulate Trip";
+        btn.style.background = "#1e293b";
+      } else {
+        btn.innerText = "⏸ Pause Auto-Sim";
+        btn.style.background = "#059669";
+        autoSimTimer = setInterval(() => {
+          if (tripData && tripData.state === "IN_TRANSIT") {
+            stepSim();
+          } else {
+            toggleAuto();
+          }
+        }, 800);
+      }
+    }
+
+    async function cancelTrip() {
+      if (!currentTripId) return;
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/trips/${currentTripId}/cancel`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason: "User cancelled via Web HUD" })
+        });
+        const data = await res.json();
+        log(`[✓] Trip cancelled: ${data.cancel_reason}`, "warn");
+        updateUI(data);
+      } catch (err) {
+        log(`[!] Cancel error: ${err.message}`, "warn");
+      }
+    }
+
+    function connectWebSocket(tripId) {
+      if (ws) ws.close();
+      const wsUrl = `${WS_BASE}/ws/trips/${tripId}/telemetry`;
+      log(`Opening real-time WebSocket telemetry stream: ${wsUrl}...`, "highlight");
+      ws = new WebSocket(wsUrl);
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.error) {
+          log(`[WS Error] ${data.error}`, "warn");
+          return;
+        }
+        updateUI(data);
+      };
+
+      ws.onclose = () => {
+        log("[WS] Stream closed.", "line");
+      };
+    }
+  </script>
+</body>
+</html>
