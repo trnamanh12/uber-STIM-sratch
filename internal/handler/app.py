@@ -23,11 +23,14 @@ from internal.handler.schemas import (
     CancelTripRequest,
     GeoCoordinateSchema,
     MatchDriverResponse,
+    OfferRespondRequest,
+    OfferResponse,
     TripCreateRequest,
     TripResponse,
 )
 from internal.repository.driver_repo import DriverRepository, InMemoryDriverRepository
 from internal.repository.trip_repo import InMemoryTripRepository, TripRepository
+from internal.service.cascading_dispatch import CascadingDispatchService
 from internal.service.matching import MatchingService, NoDriverAvailableError
 from internal.service.trip_service import TripNotFoundError, TripService
 
@@ -64,11 +67,13 @@ def create_app(
 
     matching_service = MatchingService(_driver_repo, default_search_radius_km=15.0)
     _trip_service = trip_service or TripService(_trip_repo, _driver_repo, matching_service)
+    _cascading_service = CascadingDispatchService(_trip_repo, _driver_repo, default_search_radius_km=15.0)
 
     # Store in app state
     app.state.trip_service = _trip_service
     app.state.trip_repo = _trip_repo
     app.state.driver_repo = _driver_repo
+    app.state.cascading_service = _cascading_service
 
     # --------------------------------------------------------------------------
     # Exception Handlers: Domain Exceptions -> Standard HTTP Status Codes
@@ -182,6 +187,64 @@ def create_app(
         svc: TripService = app.state.trip_service
         trip = svc.complete_trip(trip_id, surge_multiplier=surge_multiplier)
         return to_trip_response(trip)
+
+    # --------------------------------------------------------------------------
+    # Driver Offer & Cascading Dispatch Endpoints
+    # --------------------------------------------------------------------------
+    @app.post("/api/v1/trips/{trip_id}/dispatch-offer", response_model=OfferResponse)
+    def create_dispatch_offer(trip_id: str):
+        cascade_svc: CascadingDispatchService = app.state.cascading_service
+        offer = cascade_svc.dispatch_next_candidate(trip_id)
+        return OfferResponse(
+            offer_id=offer.offer_id,
+            trip_id=offer.trip_id,
+            driver_id=offer.driver_id,
+            state=offer.state.value,
+            created_at=offer.created_at,
+            expires_at=offer.expires_at,
+        )
+
+    @app.post("/api/v1/offers/{offer_id}/respond")
+    def respond_to_dispatch_offer(offer_id: str, req: OfferRespondRequest):
+        cascade_svc: CascadingDispatchService = app.state.cascading_service
+        result = cascade_svc.respond_to_offer(offer_id, action=req.action)
+        if isinstance(result, tuple):
+            trip, offer = result
+            return {
+                "status": "ACCEPTED",
+                "offer_id": offer.offer_id,
+                "trip_id": trip.trip_id,
+                "trip_state": trip.state.value,
+                "driver_id": trip.driver_id,
+            }
+        else:
+            # Cascaded to next offer
+            next_offer = result
+            return {
+                "status": "CASCADED",
+                "previous_offer_id": offer_id,
+                "next_offer": {
+                    "offer_id": next_offer.offer_id,
+                    "driver_id": next_offer.driver_id,
+                    "state": next_offer.state.value,
+                    "expires_at": next_offer.expires_at,
+                },
+            }
+
+    @app.get("/api/v1/offers/{offer_id}", response_model=OfferResponse)
+    def get_dispatch_offer(offer_id: str):
+        cascade_svc: CascadingDispatchService = app.state.cascading_service
+        offer = cascade_svc.get_offer(offer_id)
+        if not offer:
+            raise HTTPException(status_code=404, detail="Offer not found")
+        return OfferResponse(
+            offer_id=offer.offer_id,
+            trip_id=offer.trip_id,
+            driver_id=offer.driver_id,
+            state=offer.state.value,
+            created_at=offer.created_at,
+            expires_at=offer.expires_at,
+        )
 
     # --------------------------------------------------------------------------
     # Real-Time WebSocket Telemetry Stream (1Hz / State Streaming)

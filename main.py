@@ -1,88 +1,116 @@
 """
-main.py - Entry point for Milestone 8: Dynamic Pricing, Multi-Stop Detours & Performance Benchmarks.
+main.py - Entry point demonstrating Milestones 0 through 10.
 """
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import sys
+import threading
 import time
 from fastapi.testclient import TestClient
 import uvicorn
 
-from internal.domain.driver import Driver, GeoCoordinate
+from internal.domain.driver import Driver, DriverState, GeoCoordinate
 from internal.domain.pricing import PricingConfig, SurgePricingEngine
+from internal.domain.offer import OfferState
+from internal.domain.trip import Trip
 from internal.handler.app import create_app
 from internal.repository.driver_repo import InMemoryDriverRepository
 from internal.repository.trip_repo import InMemoryTripRepository
-from internal.service.matching import MatchingService
+from internal.service.cascading_dispatch import CascadingDispatchService
+from internal.service.matching import MatchingService, NoDriverAvailableError
 from internal.service.trip_service import TripService
 
 app = create_app()
 
 
 def run_cli_demo() -> None:
-    print("=" * 80)
-    print("UBER MOBILITY ENGINE - MILESTONE 8: DYNAMIC PRICING, DETOURS & BENCHMARKS")
-    print("=" * 80)
+    print("=" * 85)
+    print("UBER MOBILITY ENGINE - MILESTONES 9 & 10: CONCURRENCY LOCK & CASCADING DISPATCH")
+    print("=" * 85)
 
-    # 1. Surge Pricing Engine Demonstration
-    print("\n[1. Dynamic Surge Pricing Engine]")
-    pricing = SurgePricingEngine()
-    test_cases = [
-        ("High Supply (Surge Low)", 5, 20),
-        ("Balanced Market (Surge Base)", 10, 10),
-        ("Peak Hours (Surge High)", 25, 5),
-        ("Storm Spike (Surge Capped)", 100, 2),
-    ]
-    for label, demand, supply in test_cases:
-        surge = pricing.calculate_surge_multiplier(demand, supply)
-        est_fare = pricing.calculate_fare(distance_km=8.5, duration_seconds=900, surge_multiplier=surge)
-        print(f"  {label:<30} Demand={demand:>3} | Supply={supply:>2} | Multiplier={surge:.1f}x | Fare=${est_fare:.2f}")
-
-    # 2. Multi-Stop Detour Routing with Invariant A Preservation
-    print("\n[2. Multi-Stop Detour Routing & Invariant A (Destination Integrity)]")
+    # --------------------------------------------------------------------------
+    # 1. Milestone 9: Optimistic Concurrency Control (OCC) Race Condition Test
+    # --------------------------------------------------------------------------
+    print("\n[Milestone 9: Concurrency Control - 10 Threads Competing for 1 Lone Driver]")
     trip_repo = InMemoryTripRepository()
     driver_repo = InMemoryDriverRepository()
-    d1 = Driver("D-01", "Alex Chen", GeoCoordinate(lat=10.7720, lon=106.6980))
-    driver_repo.register(d1)
+
+    lone_driver = Driver("D-LONE", "Alex Lone", GeoCoordinate(lat=10.7760, lon=106.7000))
+    driver_repo.register(lone_driver)
     matching = MatchingService(driver_repo)
-    trip_service = TripService(trip_repo, driver_repo, matching, pricing)
+    trip_svc = TripService(trip_repo, driver_repo, matching)
 
-    origin = GeoCoordinate(lat=10.7600, lon=106.6600)
-    final_dest = GeoCoordinate(lat=10.8200, lon=106.7500)
-    trip, _ = trip_service.request_trip(
-        idempotency_key="detour-trip-001",
-        rider_id="rider-multi-stop",
-        origin=origin,
-        destination=final_dest,
+    # 10 riders request at the exact same moment
+    trip_ids = []
+    for i in range(10):
+        t, _ = trip_svc.request_trip(
+            idempotency_key=f"race-key-{i}",
+            rider_id=f"rider-{i}",
+            origin=GeoCoordinate(lat=10.7760, lon=106.7000),
+            destination=GeoCoordinate(lat=10.8000, lon=106.7200),
+        )
+        trip_ids.append(t.trip_id)
+
+    winners = []
+    lock = threading.Lock()
+
+    def attempt_book(tid: str):
+        try:
+            _, d, _ = trip_svc.match_and_assign_driver(tid)
+            with lock:
+                winners.append((tid, d.driver_id))
+        except NoDriverAvailableError:
+            pass
+
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        list(executor.map(attempt_book, trip_ids))
+
+    print(f"  --> Spawned 10 concurrent threads targeting Driver {lone_driver.driver_id}.")
+    print(f"  --> Total successful atomic assignments: {len(winners)}")
+    assert len(winners) == 1, "Concurrency invariant violated! Double booking occurred."
+    print(f"  [✓] INVARIANT PRESERVED: Exactly 1 thread matched (Trip: {winners[0][0]}). Zero double-bookings.")
+
+    # --------------------------------------------------------------------------
+    # 2. Milestone 10: Driver Offer Negotiation & Cascading Dispatch Ring
+    # --------------------------------------------------------------------------
+    print("\n[Milestone 10: Driver Offer Negotiation & Cascading Dispatch Ring]")
+    cascade_trip_repo = InMemoryTripRepository()
+    cascade_driver_repo = InMemoryDriverRepository()
+
+    d_near = Driver("D-01", "Driver Alpha (Near)", GeoCoordinate(lat=10.7765, lon=106.7005))
+    d_mid = Driver("D-02", "Driver Beta (Mid)", GeoCoordinate(lat=10.7850, lon=106.7120))
+    cascade_driver_repo.register(d_near)
+    cascade_driver_repo.register(d_mid)
+
+    cascade_svc = CascadingDispatchService(cascade_trip_repo, cascade_driver_repo, default_ttl_seconds=15.0)
+
+    # Rider requests ride
+    c_trip = Trip(
+        trip_id="TRIP-CASCADE-1",
+        rider_id="rider-negotiator",
+        origin=GeoCoordinate(lat=10.7760, lon=106.7000),
+        destination=GeoCoordinate(lat=10.8000, lon=106.7300),
     )
-    print(f"  --> Trip Created: Origin=({origin.lat:.4f}, {origin.lon:.4f}) -> Destination=({final_dest.lat:.4f}, {final_dest.lon:.4f})")
-    print(f"  --> Invariant A: Locked Destination = ({trip.destination.lat:.4f}, {trip.destination.lon:.4f})")
+    cascade_trip_repo.save(c_trip)
 
-    # Add Waypoint Detour
-    intermediate_stop = GeoCoordinate(lat=10.7850, lon=106.7050)
-    trip = trip_service.add_waypoint(trip.trip_id, intermediate_stop)
-    print(f"  --> Detour Added: Waypoint #1 = ({trip.waypoints[0].lat:.4f}, {trip.waypoints[0].lon:.4f})")
-    assert trip.destination == final_dest, "CRITICAL: Destination corrupted by detour!"
-    print(f"  [✓] Invariant A Preserved! Destination remains strictly locked at ({trip.destination.lat:.4f}, {trip.destination.lon:.4f})")
+    # Step 1: System sends Offer #1 to nearest driver (D-01)
+    offer_1 = cascade_svc.dispatch_next_candidate(c_trip.trip_id)
+    print(f"  --> Step 1 (Offer Dispatched): Offer ID={offer_1.offer_id} sent to Nearest Candidate: {offer_1.driver_id}")
+    print(f"      Offer State: {offer_1.state.value} | Expires in: {offer_1.expires_at - offer_1.created_at:.0f}s")
 
-    # 3. Microsecond Dispatch Latency Benchmark
-    print("\n[3. Dispatch Engine Latency Benchmark under Fleet Load]")
-    for i in range(100):
-        lat = 10.7760 + ((i % 10) - 5) * 0.005
-        lon = 106.7000 + ((i // 10) - 5) * 0.005
-        driver_repo.register(Driver(f"D-LOAD-{i:03d}", f"Driver {i}", GeoCoordinate(lat=lat, lon=lon)))
+    # Step 2: Driver D-01 declines
+    print(f"  --> Step 2 (Driver Action): Driver {offer_1.driver_id} DECLINES offer!")
+    offer_2 = cascade_svc.respond_to_offer(offer_1.offer_id, action="DECLINE")
+    print(f"  --> Step 3 (Cascading Triggered): Offer automatically cascaded to Next Candidate: {offer_2.driver_id}")
+    assert offer_2.driver_id == "D-02"
 
-    start_bench = time.perf_counter()
-    n_queries = 200
-    for _ in range(n_queries):
-        matching.match_driver_for_trip(GeoCoordinate(lat=10.7760, lon=106.7000))
-    elapsed = time.perf_counter() - start_bench
-    avg_us = (elapsed / n_queries) * 1_000_000.0
-    print(f"  --> Evaluated {n_queries} dispatch matches over 100 drivers.")
-    print(f"  --> Average Dispatch Latency: {avg_us:.1f} microseconds ({avg_us / 1000.0:.3f} ms)")
-    print(f"  [✓] Throughput: {n_queries / elapsed:,.0f} queries/sec (well within real-time budget)")
+    # Step 3: Driver D-02 accepts
+    print(f"  --> Step 4 (Driver Action): Driver {offer_2.driver_id} ACCEPTS offer!")
+    matched_trip, accepted_offer = cascade_svc.respond_to_offer(offer_2.offer_id, action="ACCEPT")
+    print(f"  [✓] Dispatch Cycle Complete! Trip State: {matched_trip.state.value} | Driver Bound: {matched_trip.driver_id}")
 
-    print("\n[✓] Milestone 8 Earned Complexity Fully Operational & Verified.")
-    print("=" * 80)
+    print("\n[✓] Milestones 9 & 10 Fully Operational, Tested & Verified.")
+    print("=" * 85)
 
 
 if __name__ == "__main__":

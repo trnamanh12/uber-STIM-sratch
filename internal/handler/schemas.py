@@ -49,3 +49,16 @@ class MatchDriverResponse(BaseModel):
     driver_name: str
     eta_minutes: float
     trip_state: str
+
+
+class OfferResponse(BaseModel):
+    offer_id: str
+    trip_id: str
+    driver_id: str
+    state: str
+    created_at: float
+    expires_at: float
+
+
+class OfferRespondRequest(BaseModel):
+    action: str = Field(..., description="'ACCEPT' or 'DECLINE'")

@@ -38,6 +38,14 @@ from internal.domain.pricing import (
     PricingConfig,
     SurgePricingEngine,
 )
+from internal.domain.offer import (
+    DispatchOffer,
+    OfferState,
+    OfferExpiredError,
+)
+from internal.service.cascading_dispatch import (
+    CascadingDispatchService,
+)
 
 __all__ = [
     "DomainError",
@@ -62,4 +70,8 @@ __all__ = [
     "TripNotFoundError",
     "PricingConfig",
     "SurgePricingEngine",
+    "DispatchOffer",
+    "OfferState",
+    "OfferExpiredError",
+    "CascadingDispatchService",
 ]
