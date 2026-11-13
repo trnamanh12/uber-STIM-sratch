@@ -1,37 +1,48 @@
 """
-main.py - Runnable CLI entry point for Milestone 1: Walking Skeleton
+main.py - Runnable CLI demonstration for Milestone 2: Formal State Machine
 """
 
-from core import WalkingSkeletonTrip
+import time
+from core import Trip, TripState, IllegalStateTransitionError
 
 
 def main() -> None:
-    print("=" * 70)
-    print("UBER MOBILITY ENGINE - MILESTONE 1: WALKING SKELETON (1D SIMULATION)")
-    print("=" * 70)
+    print("=" * 75)
+    print("UBER MOBILITY ENGINE - MILESTONE 2: FORMAL TRIP STATE MACHINE & INVARIANTS")
+    print("=" * 75)
 
-    trip = WalkingSkeletonTrip(
-        trip_id="trip-101",
-        rider_id="rider-42",
+    trip = Trip(
+        trip_id="trip-202",
+        rider_id="rider-88",
         origin=0.0,
         destination=100.0,
-        step_size=20.0,
     )
 
-    print(f"[*] Trip Requested: ID={trip.trip_id}, Rider={trip.rider_id}")
-    print(f"[*] Origin: x={trip.origin}m -> Destination: x={trip.destination}m")
-    print("[-] Starting Vehicle Telemetry Loop...\n")
+    print(f"[*] Trip Created: ID={trip.trip_id}, Rider={trip.rider_id}")
+    print(f"[*] Initial State: {trip.state.value} | Destination Locked at: {trip.destination}m")
+    print("\n[-] Executing Simulated Trip Lifecycle with Invariant Verification...\n")
 
-    for telemetry in trip.run_simulation():
+    for snapshot in trip.run_simulated_trip(driver_id="driver-007", step_size=25.0, time_step_sec=5.0):
         print(
-            f"    [Tick {telemetry['tick']:02d}] "
-            f"Pos: {telemetry['position']:>5.1f}m / {telemetry['destination']:>5.1f}m | "
-            f"Remaining: {telemetry['remaining']:>5.1f}m | "
-            f"State: {telemetry['state']}"
+            f"    [{snapshot['state']:<15}] "
+            f"Pos: {snapshot['current_position']:>5.1f}m / {snapshot['destination']:>5.1f}m | "
+            f"Dist: {snapshot['distance']:>5.1f}m | "
+            f"Fare: ${snapshot['fare']:>5.2f} | "
+            f"{snapshot['message']}"
         )
 
-    print(f"\n[✓] Trip Terminated Successfully: Final State = {trip.state}")
-    print("=" * 70)
+    print(f"\n[✓] Final Trip State: {trip.state.value}")
+    print(f"[✓] Fare Settled: ${trip.fare:.2f}")
+
+    # Demonstrate Invariant B: Terminal Lock
+    print("\n[-] Verifying Invariant B (Terminal Lock): Attempting illegal mutation...")
+    try:
+        trip.transition_to(TripState.IN_TRANSIT)
+        print("[!] ERROR: Terminal lock failed!")
+    except IllegalStateTransitionError as exc:
+        print(f"[✓] Invariant B Preserved! System rejected transition with error:\n    --> {exc}")
+
+    print("=" * 75)
 
 
 if __name__ == "__main__":
