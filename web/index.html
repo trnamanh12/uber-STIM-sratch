@@ -2,532 +2,425 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Uber Mobility Engine - Live Telemetry HUD</title>
-  <style>
-    :root {
-      --bg: #0b0f19;
-      --card-bg: #141b2d;
-      --accent: #00ff88;
-      --accent-cyan: #00e5ff;
-      --accent-amber: #ffb703;
-      --accent-red: #ff3366;
-      --text-main: #f0f4f8;
-      --text-dim: #8ba2b5;
-      --border: #232f48;
-    }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      background: var(--bg);
-      color: var(--text-main);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "JetBrains Mono", monospace;
-      display: flex;
-      flex-direction: column;
-      height: 100vh;
-      overflow: hidden;
-    }
-
-    header {
-      background: var(--card-bg);
-      border-bottom: 1px solid var(--border);
-      padding: 12px 24px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      font-weight: 700;
-      letter-spacing: 0.5px;
-    }
-
-    .brand-tag {
-      background: #00e5ff22;
-      color: var(--accent-cyan);
-      border: 1px solid var(--accent-cyan);
-      font-size: 11px;
-      padding: 2px 8px;
-      border-radius: 4px;
-      text-transform: uppercase;
-    }
-
-    .status-badge {
-      font-size: 13px;
-      font-weight: 600;
-      padding: 6px 14px;
-      border-radius: 20px;
-      background: #333;
-      color: #aaa;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .status-badge::before {
-      content: "";
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: currentColor;
-    }
-
-    .status-REQUESTED { background: #3b82f622; color: #60a5fa; }
-    .status-MATCHED { background: #8b5cf622; color: #a78bfa; }
-    .status-DRIVER_ARRIVING { background: #f59e0b22; color: #fbbf24; }
-    .status-IN_TRANSIT { background: #10b98122; color: #34d399; }
-    .status-DROPPED_OFF { background: #06b6d422; color: #22d3ee; }
-    .status-COMPLETED { background: #10b98133; color: #4ade80; border: 1px solid #4ade80; }
-    .status-CANCELLED { background: #ef444422; color: #f87171; border: 1px solid #f87171; }
-
-    main {
-      flex: 1;
-      display: grid;
-      grid-template-columns: 1fr 380px;
-      gap: 16px;
-      padding: 16px;
-      overflow: hidden;
-    }
-
-    .canvas-container {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      position: relative;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
-
-    canvas {
-      flex: 1;
-      width: 100%;
-      height: 100%;
-      background: radial-gradient(circle at center, #111827 0%, #080d1a 100%);
-    }
-
-    .hud-overlay {
-      position: absolute;
-      top: 16px;
-      left: 16px;
-      background: rgba(11, 15, 25, 0.85);
-      backdrop-filter: blur(8px);
-      border: 1px solid var(--border);
-      padding: 12px 16px;
-      border-radius: 6px;
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 16px;
-      font-size: 12px;
-    }
-
-    .hud-metric-label {
-      color: var(--text-dim);
-      margin-bottom: 4px;
-      text-transform: uppercase;
-      font-size: 10px;
-    }
-
-    .hud-metric-val {
-      font-size: 16px;
-      font-weight: 700;
-      color: var(--accent);
-      font-family: monospace;
-    }
-
-    .sidebar {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      overflow: hidden;
-    }
-
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 16px;
-    }
-
-    .card-title {
-      font-size: 12px;
-      font-weight: 700;
-      text-transform: uppercase;
-      color: var(--text-dim);
-      margin-bottom: 12px;
-      letter-spacing: 0.5px;
-    }
-
-    .controls-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
-
-    button {
-      background: #1e293b;
-      color: var(--text-main);
-      border: 1px solid var(--border);
-      padding: 10px 14px;
-      border-radius: 6px;
-      font-weight: 600;
-      font-size: 12px;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-
-    button:hover:not(:disabled) {
-      background: #334155;
-      border-color: var(--accent-cyan);
-    }
-
-    button.primary {
-      background: var(--accent);
-      color: #052e16;
-      border-color: var(--accent);
-    }
-
-    button.primary:hover:not(:disabled) {
-      background: #00df76;
-    }
-
-    button.danger {
-      color: var(--accent-red);
-      border-color: #ef444455;
-    }
-
-    button.danger:hover:not(:disabled) {
-      background: #ef444422;
-    }
-
-    button:disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-    }
-
-    .logs-card {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-
-    .logs-console {
-      flex: 1;
-      background: #070a13;
-      border: 1px solid #162033;
-      border-radius: 4px;
-      padding: 10px;
-      font-family: monospace;
-      font-size: 11px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .log-line {
-      color: #a0aec0;
-      line-height: 1.4;
-    }
-
-    .log-highlight { color: var(--accent-cyan); }
-    .log-success { color: var(--accent); }
-    .log-warn { color: var(--accent-amber); }
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>UBER MOBILITY ENGINE - Live Telemetry HUD</title>
+  <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <header>
-    <div class="brand">
-      <span>UBER MOBILITY ENGINE</span>
-      <span class="brand-tag">Autonomous Core</span>
-    </div>
-    <div>
-      <span id="tripIdDisplay" style="font-family: monospace; font-size: 12px; color: var(--text-dim); margin-right: 12px;">No active trip</span>
-      <span id="statusBadge" class="status-badge">STANDBY</span>
-    </div>
-  </header>
 
-  <main>
-    <div class="canvas-container">
-      <div class="hud-overlay">
-        <div>
-          <div class="hud-metric-label">Distance</div>
-          <div id="hudDist" class="hud-metric-val">0.0 km</div>
-        </div>
-        <div>
-          <div class="hud-metric-label">Duration</div>
-          <div id="hudTime" class="hud-metric-val">0s</div>
-        </div>
-        <div>
-          <div class="hud-metric-label">Estimated Fare</div>
-          <div id="hudFare" class="hud-metric-val">$0.00</div>
-        </div>
-        <div>
-          <div class="hud-metric-label">Driver Assigned</div>
-          <div id="hudDriver" class="hud-metric-val" style="font-size: 13px; color: var(--accent-cyan);">-</div>
-        </div>
+  <!-- Outer Mobile Device Mockup Frame (Responsive) -->
+  <div class="device-container" id="app-root">
+    
+    <!-- Top Floating Header -->
+    <header class="app-header">
+      <div class="brand-capsule">
+        <span class="brand-logo">Uber</span>
+        <span class="brand-badge">Mobility Engine</span>
       </div>
+      <div class="connection-indicator">
+        <span class="status-dot" id="ws-indicator"></span>
+        <span id="connection-status-text">Ready</span>
+      </div>
+    </header>
+
+    <!-- Map Viewport Canvas -->
+    <div class="map-viewport" id="map-viewport">
       <canvas id="mapCanvas"></canvas>
-    </div>
-
-    <div class="sidebar">
-      <div class="card">
-        <div class="card-title">Trip Controls</div>
-        <div class="controls-grid">
-          <button id="btnRequest" class="primary" onclick="requestTrip()">1. Request Ride</button>
-          <button id="btnMatch" onclick="matchDriver()" disabled>2. Match Driver</button>
-          <button id="btnStart" onclick="startTrip()" disabled>3. Board Rider</button>
-          <button id="btnStep" onclick="stepSim()" disabled>4. Step Forward</button>
-          <button id="btnAuto" onclick="toggleAuto()" style="grid-column: span 2;" disabled>▶ Auto-Simulate Trip</button>
-          <button id="btnCancel" class="danger" onclick="cancelTrip()" style="grid-column: span 2;" disabled>Cancel Ride</button>
-        </div>
-      </div>
-
-      <div class="card logs-card">
-        <div class="card-title">Real-Time Event Stream</div>
-        <div id="logsConsole" class="logs-console">
-          <div class="log-line log-highlight">[*] Client initialized. Ready to request trip.</div>
-        </div>
+      
+      <!-- Floating Map Utility Buttons -->
+      <div class="map-floating-controls">
+        <button class="map-control-btn" id="recenter-btn" title="Recenter Map" aria-label="Recenter Map">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon>
+          </svg>
+        </button>
+        <button class="map-control-btn" id="safety-btn" title="Safety Toolkit" aria-label="Safety Toolkit">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+          </svg>
+        </button>
       </div>
     </div>
-  </main>
 
-  <script>
-    const API_BASE = window.location.origin;
-    const WS_BASE = API_BASE.replace(/^http/, 'ws');
+    <!-- ======================================================================
+         UBER GESTURE BOTTOM SHEET (Dynamic Multi-Phase State)
+         ====================================================================== -->
+    <section class="bottom-sheet" id="bottom-sheet" aria-label="Ride Booking Bottom Sheet">
+      <!-- Drag Handle Affordance -->
+      <div class="sheet-handle-bar" id="sheet-handle">
+        <div class="sheet-handle-pill"></div>
+      </div>
 
-    let currentTripId = null;
-    let ws = null;
-    let autoSimTimer = null;
-    let tripData = null;
+      <div class="sheet-content" id="sheet-content">
+        
+        <!-- PHASE 1: IDLE / WHERE TO -->
+        <div id="phase-idle" class="phase-view">
+          <div class="idle-search-pill" id="open-search-trigger" role="button" tabindex="0" aria-label="Search destination">
+            <div class="search-icon-box">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+            </div>
+            <div class="search-prompt-text">Where to?</div>
+            <div class="time-capsule">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+              </svg>
+              <span>Now ▾</span>
+            </div>
+          </div>
 
-    const canvas = document.getElementById("mapCanvas");
-    const ctx = canvas.getContext("2d");
+          <!-- Quick Shortcuts Row -->
+          <div class="shortcuts-row">
+            <div class="shortcut-item" data-dest="Landmark 81" data-lat="10.7950" data-lon="106.7218">
+              <div class="shortcut-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                </svg>
+              </div>
+              <div class="shortcut-text">
+                <span class="shortcut-title">Landmark 81</span>
+                <span class="shortcut-sub">3.8 km • 8 min</span>
+              </div>
+            </div>
 
-    function resizeCanvas() {
-      canvas.width = canvas.parentElement.clientWidth;
-      canvas.height = canvas.parentElement.clientHeight;
-      drawMap();
-    }
-    window.addEventListener("resize", resizeCanvas);
-    setTimeout(resizeCanvas, 50);
+            <div class="shortcut-item" data-dest="Bitexco Tower" data-lat="10.7718" data-lon="106.7044">
+              <div class="shortcut-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+                  <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+                </svg>
+              </div>
+              <div class="shortcut-text">
+                <span class="shortcut-title">Bitexco Tower</span>
+                <span class="shortcut-sub">1.2 km • 3 min</span>
+              </div>
+            </div>
 
-    function log(msg, type = "line") {
-      const el = document.getElementById("logsConsole");
-      const div = document.createElement("div");
-      div.className = `log-line ${type ? 'log-' + type : ''}`;
-      const time = new Date().toLocaleTimeString();
-      div.innerText = `[${time}] ${msg}`;
-      el.appendChild(div);
-      el.scrollTop = el.scrollHeight;
-    }
+            <div class="shortcut-item" data-dest="Tan Son Nhat Airport" data-lat="10.8185" data-lon="106.6588">
+              <div class="shortcut-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.3c.4-.2.6-.6.5-1.1z"></path>
+                </svg>
+              </div>
+              <div class="shortcut-text">
+                <span class="shortcut-title">SGN Airport</span>
+                <span class="shortcut-sub">7.4 km • 18 min</span>
+              </div>
+            </div>
+          </div>
+        </div>
 
-    function updateBadge(state) {
-      const badge = document.getElementById("statusBadge");
-      badge.className = `status-badge status-${state}`;
-      badge.innerText = state || "STANDBY";
-    }
+        <!-- PHASE 2: RIDE TIER SELECTION (UberX, Comfort, XL, Black) -->
+        <div id="phase-selection" class="phase-view" style="display: none;">
+          <div class="ride-options-header">
+            <h3 class="section-title">Choose a ride</h3>
+            <span class="surge-chip" id="surge-badge">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+              </svg>
+              <span id="surge-text">1.2x Surge</span>
+            </span>
+          </div>
 
-    function updateUI(data) {
-      tripData = data;
-      document.getElementById("tripIdDisplay").innerText = `Trip: ${data.trip_id}`;
-      updateBadge(data.state);
-      document.getElementById("hudDist").innerText = `${data.distance_km.toFixed(2)} km`;
-      document.getElementById("hudTime").innerText = `${data.duration_seconds.toFixed(0)}s`;
-      document.getElementById("hudFare").innerText = `$${data.fare.toFixed(2)}`;
-      document.getElementById("hudDriver").innerText = data.driver_id || "Unassigned";
+          <div class="ride-cards-list" id="ride-cards-container">
+            <!-- UberX -->
+            <div class="ride-card selected" data-tier="UberX" data-multiplier="1.0" tabindex="0">
+              <div class="ride-card-left">
+                <div class="ride-vehicle-img">
+                  <svg width="48" height="32" viewBox="0 0 100 50">
+                    <rect x="10" y="20" width="80" height="20" rx="6" fill="#111827"/>
+                    <path d="M25 20 L35 8 L65 8 L75 20 Z" fill="#1f2937"/>
+                    <circle cx="28" cy="40" r="8" fill="#4b5563"/>
+                    <circle cx="28" cy="40" r="4" fill="#9ca3af"/>
+                    <circle cx="72" cy="40" r="8" fill="#4b5563"/>
+                    <circle cx="72" cy="40" r="4" fill="#9ca3af"/>
+                    <rect x="38" y="11" width="12" height="7" rx="1" fill="#93c5fd" opacity="0.8"/>
+                    <rect x="52" y="11" width="12" height="7" rx="1" fill="#93c5fd" opacity="0.8"/>
+                  </svg>
+                </div>
+                <div class="ride-info-box">
+                  <div class="ride-info-title">
+                    <span>UberX</span>
+                    <span class="passenger-capacity">👤 4</span>
+                  </div>
+                  <div class="ride-info-eta" id="uberx-eta">3 min away • 12:45pm</div>
+                </div>
+              </div>
+              <div class="ride-card-right">
+                <div class="ride-fare-price" id="uberx-fare">$12.40</div>
+                <div class="ride-fare-old" id="uberx-old-fare">$14.80</div>
+              </div>
+            </div>
 
-      // Button availability
-      document.getElementById("btnRequest").disabled = (data.state !== "COMPLETED" && data.state !== "CANCELLED");
-      document.getElementById("btnMatch").disabled = (data.state !== "REQUESTED");
-      document.getElementById("btnStart").disabled = (data.state !== "MATCHED");
-      document.getElementById("btnStep").disabled = (data.state !== "IN_TRANSIT");
-      document.getElementById("btnAuto").disabled = (data.state !== "IN_TRANSIT");
-      document.getElementById("btnCancel").disabled = (data.state === "COMPLETED" || data.state === "CANCELLED");
+            <!-- Uber Comfort -->
+            <div class="ride-card" data-tier="Comfort" data-multiplier="1.35" tabindex="0">
+              <div class="ride-card-left">
+                <div class="ride-vehicle-img">
+                  <svg width="48" height="32" viewBox="0 0 100 50">
+                    <rect x="10" y="18" width="82" height="22" rx="7" fill="#0f172a"/>
+                    <path d="M24 18 L36 6 L68 6 L78 18 Z" fill="#1e293b"/>
+                    <circle cx="28" cy="40" r="8" fill="#334155"/>
+                    <circle cx="28" cy="40" r="4" fill="#94a3b8"/>
+                    <circle cx="74" cy="40" r="8" fill="#334155"/>
+                    <circle cx="74" cy="40" r="4" fill="#94a3b8"/>
+                    <rect x="38" y="9" width="13" height="7" rx="1" fill="#bae6fd" opacity="0.8"/>
+                    <rect x="54" y="9" width="13" height="7" rx="1" fill="#bae6fd" opacity="0.8"/>
+                  </svg>
+                </div>
+                <div class="ride-info-box">
+                  <div class="ride-info-title">
+                    <span>Comfort</span>
+                    <span class="passenger-capacity">👤 4</span>
+                  </div>
+                  <div class="ride-info-eta" id="comfort-eta">5 min away • Newer cars</div>
+                </div>
+              </div>
+              <div class="ride-card-right">
+                <div class="ride-fare-price" id="comfort-fare">$16.75</div>
+              </div>
+            </div>
 
-      drawMap();
-    }
+            <!-- UberXL -->
+            <div class="ride-card" data-tier="UberXL" data-multiplier="1.75" tabindex="0">
+              <div class="ride-card-left">
+                <div class="ride-vehicle-img">
+                  <svg width="48" height="32" viewBox="0 0 100 50">
+                    <rect x="8" y="16" width="84" height="24" rx="8" fill="#18181b"/>
+                    <path d="M20 16 L28 5 L76 5 L84 16 Z" fill="#27272a"/>
+                    <circle cx="26" cy="40" r="8.5" fill="#3f3f46"/>
+                    <circle cx="26" cy="40" r="4" fill="#a1a1aa"/>
+                    <circle cx="74" cy="40" r="8.5" fill="#3f3f46"/>
+                    <circle cx="74" cy="40" r="4" fill="#a1a1aa"/>
+                    <rect x="32" y="8" width="12" height="6" rx="1" fill="#e4e4e7" opacity="0.6"/>
+                    <rect x="47" y="8" width="12" height="6" rx="1" fill="#e4e4e7" opacity="0.6"/>
+                    <rect x="62" y="8" width="12" height="6" rx="1" fill="#e4e4e7" opacity="0.6"/>
+                  </svg>
+                </div>
+                <div class="ride-info-box">
+                  <div class="ride-info-title">
+                    <span>UberXL</span>
+                    <span class="passenger-capacity">👤 6</span>
+                  </div>
+                  <div class="ride-info-eta" id="xl-eta">7 min away • Big groups</div>
+                </div>
+              </div>
+              <div class="ride-card-right">
+                <div class="ride-fare-price" id="xl-fare">$21.70</div>
+              </div>
+            </div>
+          </div>
 
-    function drawMap() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      const w = canvas.width;
-      const h = canvas.height;
+          <!-- Payment Selector Bar -->
+          <div class="payment-selector-bar" id="payment-bar" tabindex="0">
+            <div class="payment-method-info">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect>
+                <line x1="1" y1="10" x2="23" y2="10"></line>
+              </svg>
+              <span>Visa •••• 4242</span>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="9 18 15 12 9 6"></polyline>
+            </svg>
+          </div>
 
-      // Draw cyber spatial grid
-      ctx.strokeStyle = "#162033";
-      ctx.lineWidth = 1;
-      const gridSize = 40;
-      for (let x = 0; x < w; x += gridSize) {
-        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
-      }
-      for (let y = 0; y < h; y += gridSize) {
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
-      }
+          <!-- Primary Booking Button -->
+          <button class="primary-cta-btn" id="confirm-booking-btn">
+            <span>Choose UberX</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+              <polyline points="12 5 19 12 12 19"></polyline>
+            </svg>
+          </button>
+        </div>
 
-      if (!tripData) return;
+        <!-- PHASE 3: DISPATCHING / MATCHING RADAR -->
+        <div id="phase-matching" class="phase-view" style="display: none;">
+          <div class="radar-pulse-container">
+            <div class="radar-circle">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#276ef1" stroke-width="2.5">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon>
+              </svg>
+            </div>
+            <h3 style="font-size: 18px; font-weight: 800; margin-top: 16px;">Connecting to nearby drivers...</h3>
+            <p style="font-size: 13px; color: #6b7280; margin-top: 4px;">Applying Spatial Haversine Dispatch algorithm</p>
+          </div>
+        </div>
 
-      // Coordinate normalization to canvas space
-      // Origin: (10.7760, 106.7000), Dest: (10.7950, 106.7250)
-      const minLat = 10.770, maxLat = 10.800;
-      const minLon = 106.695, maxLon = 106.730;
+        <!-- PHASE 4: LIVE TRIP TELEMETRY & DRIVER HUD -->
+        <div id="phase-telemetry" class="phase-view" style="display: none;">
+          <div class="telemetry-status-banner">
+            <div>
+              <span class="status-badge-lg badge-MATCHED" id="live-trip-status-badge">MATCHED</span>
+              <div class="trip-eta-headline" id="live-trip-eta-headline">Driver arriving in 3 mins</div>
+            </div>
+            <div style="text-align: right;">
+              <span style="font-size: 11px; color: #6b7280; text-transform: uppercase; font-weight: 700;">Trip ID</span>
+              <div style="font-family: monospace; font-size: 12px; font-weight: 700;" id="active-trip-id-display">TRIP-001</div>
+            </div>
+          </div>
 
-      function toXY(lat, lon) {
-        const pad = 80;
-        const x = pad + ((lon - minLon) / (maxLon - minLon)) * (w - pad * 2);
-        const y = h - (pad + ((lat - minLat) / (maxLat - minLat)) * (h - pad * 2));
-        return { x, y };
-      }
+          <!-- Driver Profile Card -->
+          <div class="driver-card">
+            <div class="driver-profile">
+              <div class="driver-avatar" id="driver-avatar-initials">AC</div>
+              <div>
+                <div class="driver-name" id="driver-name-text">Alex Chen</div>
+                <div class="driver-rating">
+                  <span style="color: #f59e0b;">★ 4.96</span>
+                  <span>(1,480 trips)</span>
+                </div>
+              </div>
+            </div>
+            <div class="vehicle-plate-box">
+              <div class="license-plate-pill" id="driver-plate-text">51A-982.34</div>
+              <div class="vehicle-model-desc" id="driver-vehicle-text">Toyota Camry • White</div>
+            </div>
+          </div>
 
-      const pOrigin = toXY(tripData.origin.lat, tripData.origin.lon);
-      const pDest = toXY(tripData.destination.lat, tripData.destination.lon);
-      const pCar = toXY(tripData.current_position.lat, tripData.current_position.lon);
+          <!-- Action Buttons: Message, Call, Emergency -->
+          <div class="trip-actions-row">
+            <button class="action-card-btn" id="msg-driver-btn" title="Message Driver">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+              </svg>
+              <span>Message</span>
+            </button>
+            <button class="action-card-btn" id="call-driver-btn" title="Call Driver">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+              </svg>
+              <span>Call</span>
+            </button>
+            <button class="action-card-btn cancel-btn" id="cancel-trip-btn" title="Cancel Trip">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="15" y1="9" x2="9" y2="15"></line>
+                <line x1="9" y1="9" x2="15" y2="15"></line>
+              </svg>
+              <span>Cancel</span>
+            </button>
+          </div>
 
-      // 1. Draw planned route corridor
-      ctx.beginPath();
-      ctx.strokeStyle = "#2563eb66";
-      ctx.lineWidth = 4;
-      ctx.setLineDash([8, 6]);
-      ctx.moveTo(pOrigin.x, pOrigin.y);
-      ctx.lineTo(pDest.x, pDest.y);
-      ctx.stroke();
-      ctx.setLineDash([]);
+          <!-- Step Simulation Telemetry Buttons -->
+          <div style="display: flex; gap: 8px;">
+            <button class="primary-cta-btn" id="step-simulation-btn" style="background: #111827; padding: 12px; font-size: 14px;">
+              <span>Simulate Drive Step 🚗</span>
+            </button>
+            <button class="primary-cta-btn" id="add-waypoint-btn" style="background: #ffffff; color: #000000; border: 1.5px solid #000000; padding: 12px; font-size: 14px; width: 120px;">
+              <span>+ Add Stop</span>
+            </button>
+          </div>
+        </div>
 
-      // 2. Draw origin marker
-      ctx.fillStyle = "#10b981";
-      ctx.beginPath(); ctx.arc(pOrigin.x, pOrigin.y, 8, 0, 2 * Math.PI); ctx.fill();
-      ctx.fillStyle = "#fff"; ctx.font = "11px monospace";
-      ctx.fillText("PICKUP (Rider)", pOrigin.x + 12, pOrigin.y + 4);
+      </div>
+    </section>
 
-      // 3. Draw destination marker
-      ctx.fillStyle = "#ef4444";
-      ctx.beginPath(); ctx.arc(pDest.x, pDest.y, 8, 0, 2 * Math.PI); ctx.fill();
-      ctx.fillStyle = "#fff";
-      ctx.fillText("DESTINATION", pDest.x + 12, pDest.y + 4);
+    <!-- ======================================================================
+         PHASE 2: DESTINATION SEARCH MODAL DIALOG
+         Adheres to Modern Web Guidance (Accessible dialog, IME-safe submit,
+         prevent-page-scroll-under-modal-dialog)
+         ====================================================================== -->
+    <dialog id="search-dialog" aria-labelledby="search-dialog-title" closedby="any">
+      <div class="search-dialog-header">
+        <h2 id="search-dialog-title" style="font-size: 18px; font-weight: 800;">Plan your ride</h2>
+        <button type="button" class="close-btn" id="close-search-btn" aria-label="Close search">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
 
-      // 4. Draw moving driver vehicle
-      ctx.fillStyle = "#00e5ff";
-      ctx.shadowColor = "#00e5ff";
-      ctx.shadowBlur = 15;
-      ctx.beginPath(); ctx.arc(pCar.x, pCar.y, 10, 0, 2 * Math.PI); ctx.fill();
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = "#00e5ff";
-      ctx.fillText(`VEHICLE (${tripData.driver_id || 'IDLE'})`, pCar.x + 14, pCar.y - 4);
-    }
+      <form id="search-form" method="dialog">
+        <div class="inputs-container">
+          <!-- Origin Row -->
+          <div class="location-input-row">
+            <span class="pin-bullet bullet-pickup"></span>
+            <label for="pickup-input" class="visually-hidden" style="display: none;">Pickup Location</label>
+            <input type="text" id="pickup-input" class="location-input-field" value="Current Location (District 1)" readonly>
+          </div>
 
-    async function requestTrip() {
-      const idempotencyKey = `web-req-${Date.now()}`;
-      log(`Sending ride request with key: ${idempotencyKey}...`, "highlight");
+          <!-- Destination Row -->
+          <div class="location-input-row">
+            <span class="pin-bullet bullet-dest"></span>
+            <label for="dest-search-input" class="visually-hidden" style="display: none;">Where to?</label>
+            <input type="text" id="dest-search-input" class="location-input-field" placeholder="Where to?" autofocus autocomplete="off">
+          </div>
+        </div>
 
-      const payload = {
-        idempotency_key: idempotencyKey,
-        rider_id: "rider-web-client",
-        origin: { lat: 10.7760, lon: 106.7000 },
-        destination: { lat: 10.7950, lon: 106.7250 },
-        passenger_count: 1
-      };
+        <!-- Suggestions List -->
+        <ul class="suggestions-list" id="suggestions-list" role="listbox">
+          <li class="suggestion-item" data-dest="Landmark 81" data-lat="10.7950" data-lon="106.7218" role="option">
+            <div class="suggestion-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                <circle cx="12" cy="10" r="3"></circle>
+              </svg>
+            </div>
+            <div class="suggestion-details">
+              <div class="suggestion-name">Landmark 81 Sky Tower</div>
+              <div class="suggestion-address">720A Dien Bien Phu, Binh Thanh District</div>
+            </div>
+            <div class="suggestion-meta">3.8 km</div>
+          </li>
 
-      try {
-        const res = await fetch(`${API_BASE}/api/v1/trips`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        currentTripId = data.trip_id;
-        log(`[✓] Trip created: ${currentTripId} (State: ${data.state})`, "success");
-        updateUI(data);
-        connectWebSocket(currentTripId);
-      } catch (err) {
-        log(`[!] Failed to request trip: ${err.message}`, "warn");
-      }
-    }
+          <li class="suggestion-item" data-dest="Bitexco Financial Tower" data-lat="10.7718" data-lon="106.7044" role="option">
+            <div class="suggestion-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                <circle cx="12" cy="10" r="3"></circle>
+              </svg>
+            </div>
+            <div class="suggestion-details">
+              <div class="suggestion-name">Bitexco Financial Tower</div>
+              <div class="suggestion-address">2 Hai Trieu, Ben Nghe, District 1</div>
+            </div>
+            <div class="suggestion-meta">1.2 km</div>
+          </li>
 
-    async function matchDriver() {
-      if (!currentTripId) return;
-      log(`Matching nearest driver for ${currentTripId}...`, "highlight");
-      try {
-        const res = await fetch(`${API_BASE}/api/v1/trips/${currentTripId}/match`, { method: "POST" });
-        const data = await res.json();
-        log(`[✓] Matched ${data.driver_name} (ETA: ${data.eta_minutes}m)`, "success");
-      } catch (err) {
-        log(`[!] Match error: ${err.message}`, "warn");
-      }
-    }
+          <li class="suggestion-item" data-dest="Tan Son Nhat International Airport" data-lat="10.8185" data-lon="106.6588" role="option">
+            <div class="suggestion-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.3c.4-.2.6-.6.5-1.1z"></path>
+              </svg>
+            </div>
+            <div class="suggestion-details">
+              <div class="suggestion-name">Tan Son Nhat Airport (SGN)</div>
+              <div class="suggestion-address">Truong Sa, Tan Binh District</div>
+            </div>
+            <div class="suggestion-meta">7.4 km</div>
+          </li>
 
-    function startTrip() {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        log("Sending boarding confirmation to driver via WebSocket...", "highlight");
-        ws.send(JSON.stringify({ action: "start" }));
-      }
-    }
+          <li class="suggestion-item" data-dest="Saigon Opera House" data-lat="10.7766" data-lon="106.7032" role="option">
+            <div class="suggestion-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                <circle cx="12" cy="10" r="3"></circle>
+              </svg>
+            </div>
+            <div class="suggestion-details">
+              <div class="suggestion-name">Saigon Opera House</div>
+              <div class="suggestion-address">07 Lam Son Square, Ben Nghe, District 1</div>
+            </div>
+            <div class="suggestion-meta">0.8 km</div>
+          </li>
+        </ul>
 
-    function stepSim() {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ action: "step" }));
-      }
-    }
+        <div style="padding: 16px 20px; display: none;">
+          <button type="submit" id="hidden-search-submit">Submit</button>
+        </div>
+      </form>
+    </dialog>
 
-    function toggleAuto() {
-      const btn = document.getElementById("btnAuto");
-      if (autoSimTimer) {
-        clearInterval(autoSimTimer);
-        autoSimTimer = null;
-        btn.innerText = "▶ Auto-Simulate Trip";
-        btn.style.background = "#1e293b";
-      } else {
-        btn.innerText = "⏸ Pause Auto-Sim";
-        btn.style.background = "#059669";
-        autoSimTimer = setInterval(() => {
-          if (tripData && tripData.state === "IN_TRANSIT") {
-            stepSim();
-          } else {
-            toggleAuto();
-          }
-        }, 800);
-      }
-    }
+  </div>
 
-    async function cancelTrip() {
-      if (!currentTripId) return;
-      try {
-        const res = await fetch(`${API_BASE}/api/v1/trips/${currentTripId}/cancel`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ reason: "User cancelled via Web HUD" })
-        });
-        const data = await res.json();
-        log(`[✓] Trip cancelled: ${data.cancel_reason}`, "warn");
-        updateUI(data);
-      } catch (err) {
-        log(`[!] Cancel error: ${err.message}`, "warn");
-      }
-    }
-
-    function connectWebSocket(tripId) {
-      if (ws) ws.close();
-      const wsUrl = `${WS_BASE}/ws/trips/${tripId}/telemetry`;
-      log(`Opening real-time WebSocket telemetry stream: ${wsUrl}...`, "highlight");
-      ws = new WebSocket(wsUrl);
-
-      ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.error) {
-          log(`[WS Error] ${data.error}`, "warn");
-          return;
-        }
-        updateUI(data);
-      };
-
-      ws.onclose = () => {
-        log("[WS] Stream closed.", "line");
-      };
-    }
-  </script>
+  <!-- Client-side Logic -->
+  <script src="/app.js"></script>
 </body>
 </html>

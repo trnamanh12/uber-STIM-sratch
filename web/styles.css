@@ -1,0 +1,865 @@
+/* ==========================================================================
+   Uber Mobility Engine - Design System Tokens & Styles
+   Adhering to Base Design System & shadcn UI Best Practices
+   ========================================================================== */
+
+:root {
+  /* shadcn-inspired Design Tokens */
+  --background: #000000;
+  --foreground: #ffffff;
+  
+  --card: #ffffff;
+  --card-foreground: #000000;
+  
+  --popover: #ffffff;
+  --popover-foreground: #000000;
+  
+  --primary: #000000;
+  --primary-foreground: #ffffff;
+  
+  --secondary: #f3f4f6;
+  --secondary-foreground: #111827;
+  
+  --muted: #f6f6f6;
+  --muted-foreground: #6b7280;
+  
+  --accent: #276ef1;
+  --accent-foreground: #ffffff;
+  
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  
+  --success: #05a357;
+  --success-foreground: #ffffff;
+  
+  --warning: #f59e0b;
+  --border: #e5e7eb;
+  --input: #eeeeee;
+  --ring: #000000;
+  --radius: 1rem;
+  
+  /* Uber Core Palette */
+  --uber-black: #000000;
+  --uber-white: #ffffff;
+  --uber-gray-50: #fafafa;
+  --uber-gray-100: #f6f6f6;
+  --uber-gray-200: #eeeeee;
+  --uber-gray-300: #e2e8f0;
+  --uber-gray-600: #545454;
+  --uber-gray-800: #1c1c1c;
+  --uber-blue: #276ef1;
+  --uber-green: #05a357;
+  --uber-amber: #ffb703;
+  --uber-red: #e11900;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background-color: #0b0f19;
+  color: var(--card-foreground);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* App Viewport Container (Simulates Mobile Device on Desktop, Fullscreen on Mobile) */
+.device-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  max-width: 440px;
+  max-height: 920px;
+  background: #ffffff;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (max-width: 480px) {
+  body {
+    background-color: #ffffff;
+  }
+  .device-container {
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+
+@media (min-width: 481px) {
+  .device-container {
+    border-radius: 40px;
+    border: 8px solid #1a202c;
+  }
+}
+
+/* Header & Status Bar */
+.app-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  padding: 16px 20px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  pointer-events: none;
+}
+
+.brand-capsule {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 8px 14px;
+  border-radius: 9999px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.brand-logo {
+  font-weight: 800;
+  font-size: 16px;
+  letter-spacing: -0.5px;
+  color: var(--uber-black);
+}
+
+.brand-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  background: var(--uber-black);
+  color: var(--uber-white);
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.connection-indicator {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
+  padding: 8px 12px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--uber-green);
+  box-shadow: 0 0 0 2px rgba(5, 163, 87, 0.2);
+}
+
+/* Interactive Map Canvas Container */
+.map-viewport {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+#mapCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Floating Map Controls (Safety & Recenter) */
+.map-floating-controls {
+  position: absolute;
+  right: 16px;
+  top: 80px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.map-control-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.map-control-btn:active {
+  transform: scale(0.92);
+  background-color: var(--uber-gray-100);
+}
+
+/* ==========================================================================
+   Uber Signature Gesture Bottom Sheet
+   ========================================================================== */
+
+.bottom-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  background: #ffffff;
+  border-top-left-radius: 24px;
+  border-top-right-radius: 24px;
+  box-shadow: 0 -4px 25px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), height 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, height;
+}
+
+.sheet-handle-bar {
+  width: 100%;
+  padding: 10px 0 6px;
+  display: flex;
+  justify-content: center;
+  cursor: grab;
+  touch-action: none;
+}
+
+.sheet-handle-pill {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background-color: #d1d5db;
+}
+
+.sheet-content {
+  padding: 8px 20px 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  max-height: 75vh;
+}
+
+/* --------------------------------------------------------------------------
+   Phase 1: Idle State ("Where to?" Search Pill & Shortcuts)
+   -------------------------------------------------------------------------- */
+
+.idle-search-pill {
+  background-color: var(--uber-gray-100);
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition: background-color 0.2s, transform 0.15s;
+}
+
+.idle-search-pill:active {
+  background-color: var(--uber-gray-200);
+  transform: scale(0.99);
+}
+
+.search-icon-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--uber-black);
+}
+
+.search-prompt-text {
+  flex: 1;
+  font-size: 17px;
+  font-weight: 600;
+  color: #333333;
+  letter-spacing: -0.2px;
+}
+
+.time-capsule {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  padding: 6px 12px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--uber-black);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+/* Quick Shortcuts (Home, Work, Airport) */
+.shortcuts-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 18px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.shortcut-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--uber-gray-50);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px 14px;
+  cursor: pointer;
+  min-width: 130px;
+  transition: background-color 0.15s;
+}
+
+.shortcut-item:hover, .shortcut-item:active {
+  background-color: var(--uber-gray-100);
+}
+
+.shortcut-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #000000;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shortcut-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.shortcut-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--uber-black);
+}
+
+.shortcut-sub {
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+
+/* --------------------------------------------------------------------------
+   Phase 2: Search Dialog Modal (Accessible, IME-Safe, Modern Web Guidance)
+   -------------------------------------------------------------------------- */
+
+dialog#search-dialog {
+  border: none;
+  background: #ffffff;
+  width: 100%;
+  max-width: 440px;
+  height: 100%;
+  max-height: 920px;
+  margin: auto;
+  border-radius: 0;
+  padding: 0;
+  color: var(--card-foreground);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+}
+
+@media (min-width: 481px) {
+  dialog#search-dialog {
+    border-radius: 36px;
+    height: calc(100% - 16px);
+  }
+}
+
+/* MANDATORY Modern Web Guidance: Prevent background scroll under modal dialog */
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+.search-dialog-header {
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+
+.close-btn {
+  background: var(--uber-gray-100);
+  border: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.close-btn:hover {
+  background-color: var(--uber-gray-200);
+}
+
+.inputs-container {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--border);
+}
+
+.location-input-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--uber-gray-100);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+
+.pin-bullet {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.bullet-pickup {
+  background: var(--uber-blue);
+  box-shadow: 0 0 0 2px rgba(39, 110, 241, 0.3);
+}
+
+.bullet-dest {
+  background: var(--uber-black);
+  border-radius: 2px;
+}
+
+.location-input-field {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 15px;
+  font-weight: 500;
+  outline: none;
+  color: var(--uber-black);
+}
+
+.suggestions-list {
+  list-style: none;
+  padding: 8px 12px;
+  overflow-y: auto;
+  max-height: 480px;
+}
+
+.suggestion-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--uber-gray-100);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.suggestion-item:hover, .suggestion-item:active {
+  background-color: var(--uber-gray-50);
+}
+
+.suggestion-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--uber-gray-100);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--uber-black);
+  flex-shrink: 0;
+}
+
+.suggestion-details {
+  flex: 1;
+}
+
+.suggestion-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--uber-black);
+}
+
+.suggestion-address {
+  font-size: 13px;
+  color: var(--muted-foreground);
+  margin-top: 2px;
+}
+
+.suggestion-meta {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--uber-gray-600);
+  text-align: right;
+}
+
+/* --------------------------------------------------------------------------
+   Phase 3: Ride Tier Selection & Upfront Surge Pricing
+   -------------------------------------------------------------------------- */
+
+.ride-options-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.section-title {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  color: var(--uber-black);
+}
+
+.surge-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #fef3c7;
+  color: #92400e;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ride-cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.ride-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: 2px solid transparent;
+  background-color: #ffffff;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ride-card:hover {
+  background-color: var(--uber-gray-50);
+}
+
+.ride-card.selected {
+  border-color: var(--uber-black);
+  background-color: var(--uber-gray-50);
+}
+
+.ride-card-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.ride-vehicle-img {
+  width: 58px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ride-info-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--uber-black);
+}
+
+.passenger-capacity {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ride-info-eta {
+  font-size: 13px;
+  color: var(--muted-foreground);
+  margin-top: 2px;
+}
+
+.ride-card-right {
+  text-align: right;
+}
+
+.ride-fare-price {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--uber-black);
+}
+
+.ride-fare-old {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  text-decoration: line-through;
+}
+
+/* Payment & CTA Bar */
+.payment-selector-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background-color: var(--uber-gray-100);
+  border-radius: 12px;
+  margin-bottom: 14px;
+  cursor: pointer;
+}
+
+.payment-method-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--uber-black);
+}
+
+.primary-cta-btn {
+  width: 100%;
+  padding: 16px;
+  background-color: var(--uber-black);
+  color: var(--uber-white);
+  border: none;
+  border-radius: 12px;
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: -0.2px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+  transition: transform 0.1s, background-color 0.2s;
+}
+
+.primary-cta-btn:active {
+  transform: scale(0.98);
+  background-color: #222222;
+}
+
+/* --------------------------------------------------------------------------
+   Phase 4: Live Trip Telemetry & Driver Card
+   -------------------------------------------------------------------------- */
+
+.telemetry-status-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 14px;
+}
+
+.status-badge-lg {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  text-transform: uppercase;
+}
+
+.badge-MATCHED { background: #e0e7ff; color: #4338ca; }
+.badge-DRIVER_ARRIVING { background: #fef3c7; color: #92400e; }
+.badge-IN_TRANSIT { background: #dcfce7; color: #166534; }
+.badge-COMPLETED { background: #dcfce7; color: #15803d; }
+.badge-CANCELLED { background: #fee2e2; color: #991b1b; }
+
+.trip-eta-headline {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--uber-black);
+}
+
+/* Driver Profile Card */
+.driver-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--uber-gray-50);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+
+.driver-profile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.driver-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: #111827;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.driver-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--uber-black);
+}
+
+.driver-rating {
+  font-size: 13px;
+  color: var(--muted-foreground);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.vehicle-plate-box {
+  text-align: right;
+}
+
+.license-plate-pill {
+  display: inline-block;
+  padding: 4px 10px;
+  background: #ffffff;
+  border: 1.5px solid #000000;
+  border-radius: 6px;
+  font-family: monospace;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #000000;
+}
+
+.vehicle-model-desc {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+/* Actions Row (Message, Call, Cancel) */
+.trip-actions-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.action-card-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--uber-gray-100);
+  border: none;
+  border-radius: 12px;
+  padding: 10px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--uber-black);
+  transition: background-color 0.15s;
+}
+
+.action-card-btn:active {
+  background-color: var(--uber-gray-200);
+}
+
+.action-card-btn.cancel-btn {
+  color: var(--uber-red);
+}
+
+/* Radar Ripple Effect during Matching */
+.radar-pulse-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 0;
+}
+
+.radar-circle {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: rgba(39, 110, 241, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.radar-circle::after {
+  content: "";
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 2px solid var(--uber-blue);
+  animation: radar-ripple 1.6s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+}
+
+@keyframes radar-ripple {
+  0% {
+    transform: scale(0.8);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
