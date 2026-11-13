@@ -1,11 +1,11 @@
 """
-core.py - Domain State Machine, Failure-First Hardening & Invariants
+core.py - Domain State Machine, Failure Hardening & Spatial Dispatch Engine
 
-Hardened Against the 4 Fatal Questions:
-1. The Poison Pill: Typed GeoCoordinate and TripRequest validation (lat/lon bounds, NaN/Inf checks, passenger count).
-2. The Double Strike: Idempotency registry preventing duplicate request mutations.
-3. The Sudden Death: Atomic snapshotting and recovery for crash-resilience.
-4. The Silent Bleed: Structured domain events with correlation IDs and strict telemetry assertions.
+Includes:
+1. Haversine 2D Spherical Geodesic Distance Engine
+2. Driver Pool Management (IDLE, ASSIGNED, BUSY, OFFLINE)
+3. Spatial Dispatcher: Nearest-driver matching with radius bounds & graceful backoff
+4. Invariants, Failure-first protections (Q1-Q4)
 """
 
 from dataclasses import asdict, dataclass
@@ -36,6 +36,11 @@ class PoisonPayloadError(DomainError):
     pass
 
 
+class NoDriverAvailableError(DomainError):
+    """Raised when dispatch engine cannot find an eligible nearby driver."""
+    pass
+
+
 class TripState(str, Enum):
     """Explicit lifecycle states for a mobility trip."""
     REQUESTED = "REQUESTED"
@@ -45,6 +50,14 @@ class TripState(str, Enum):
     DROPPED_OFF = "DROPPED_OFF"
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
+
+
+class DriverState(str, Enum):
+    """Explicit states for mobility drivers."""
+    IDLE = "IDLE"
+    ASSIGNED = "ASSIGNED"
+    BUSY = "BUSY"
+    OFFLINE = "OFFLINE"
 
 
 ALLOWED_TRANSITIONS: Dict[TripState, Set[TripState]] = {
@@ -80,11 +93,27 @@ class GeoCoordinate:
             raise PoisonPayloadError(f"Longitude out of bounds [-180, 180]: {self.lon}")
 
 
+def haversine_distance_km(coord1: GeoCoordinate, coord2: GeoCoordinate) -> float:
+    """
+    Computes Great-Circle spherical distance between two coordinates in kilometers.
+    Earth radius R = 6371.0 km.
+    """
+    r_earth = 6371.0
+    lat1_rad = math.radians(coord1.lat)
+    lon1_rad = math.radians(coord1.lon)
+    lat2_rad = math.radians(coord2.lat)
+    lon2_rad = math.radians(coord2.lon)
+
+    dlat = lat2_rad - lat1_rad
+    dlon = lon2_rad - lon1_rad
+
+    a = math.sin(dlat / 2.0) ** 2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon / 2.0) ** 2
+    c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+    return r_earth * c
+
+
 @dataclass(frozen=True)
 class TripRequestPayload:
-    """
-    Typed transport ingestion payload with boundary checks.
-    """
     idempotency_key: str
     rider_id: str
     origin: GeoCoordinate
@@ -106,15 +135,106 @@ class TripRequestPayload:
 
 @dataclass(frozen=True)
 class DomainEvent:
-    """
-    Guards Against Q4 (The Silent Bleed).
-    Structured domain event carrying correlation ID and payload.
-    """
     event_id: str
     correlation_id: str
     event_type: str
     timestamp: float
     payload: Dict[str, Any]
+
+
+class Driver:
+    """Represents a driver in the mobility fleet."""
+
+    def __init__(self, driver_id: str, name: str, location: GeoCoordinate) -> None:
+        if not driver_id or not driver_id.strip():
+            raise InvariantViolationError("Driver ID cannot be empty")
+        if not name or not name.strip():
+            raise InvariantViolationError("Driver name cannot be empty")
+
+        self.driver_id = driver_id
+        self.name = name
+        self.location = location
+        self.state = DriverState.IDLE
+        self.assigned_trip_id: Optional[str] = None
+
+    def update_location(self, new_location: GeoCoordinate) -> None:
+        self.location = new_location
+
+    def assign_to_trip(self, trip_id: str) -> None:
+        if self.state != DriverState.IDLE:
+            raise IllegalStateTransitionError(
+                f"Driver {self.driver_id} is in state {self.state.value}; cannot be assigned to trip {trip_id}"
+            )
+        self.state = DriverState.ASSIGNED
+        self.assigned_trip_id = trip_id
+
+    def mark_busy(self) -> None:
+        self.state = DriverState.BUSY
+
+    def release(self) -> None:
+        self.state = DriverState.IDLE
+        self.assigned_trip_id = None
+
+
+class DriverPool:
+    """Manages the in-memory pool of active fleet drivers."""
+
+    def __init__(self) -> None:
+        self._drivers: Dict[str, Driver] = {}
+
+    def register_driver(self, driver: Driver) -> None:
+        self._drivers[driver.driver_id] = driver
+
+    def get_driver(self, driver_id: str) -> Optional[Driver]:
+        return self._drivers.get(driver_id)
+
+    def list_available_drivers(self) -> List[Driver]:
+        return [d for d in self._drivers.values() if d.state == DriverState.IDLE]
+
+    def all_drivers(self) -> List[Driver]:
+        return list(self._drivers.values())
+
+
+class DispatchEngine:
+    """
+    Spatial Dispatch Engine:
+    Selects the nearest available driver to rider pickup using Haversine metric.
+    """
+
+    def __init__(self, driver_pool: DriverPool, default_search_radius_km: float = 10.0) -> None:
+        self.driver_pool = driver_pool
+        self.default_search_radius_km = default_search_radius_km
+
+    def match_nearest_driver(
+        self, pickup: GeoCoordinate, max_search_radius_km: Optional[float] = None
+    ) -> Tuple[Driver, float, float]:
+        """
+        Finds the nearest IDLE driver within search radius.
+        Returns (Driver, distance_km, eta_minutes).
+        Raises NoDriverAvailableError if none found.
+        """
+        radius = max_search_radius_km or self.default_search_radius_km
+        available = self.driver_pool.list_available_drivers()
+        if not available:
+            raise NoDriverAvailableError("No available idle drivers found in fleet")
+
+        best_driver: Optional[Driver] = None
+        min_distance = float("inf")
+
+        for driver in available:
+            dist = haversine_distance_km(driver.location, pickup)
+            if dist < min_distance and dist <= radius:
+                min_distance = dist
+                best_driver = driver
+
+        if best_driver is None:
+            raise NoDriverAvailableError(
+                f"No idle drivers found within search radius of {radius:.1f} km"
+            )
+
+        # Estimate ETA assuming average urban speed of 30 km/h
+        eta_minutes = round((min_distance / 30.0) * 60.0, 1)
+        return best_driver, round(min_distance, 3), max(1.0, eta_minutes)
 
 
 class Trip:
@@ -157,7 +277,7 @@ class Trip:
         self.fare: float = 0.0
         self.cancel_reason: Optional[str] = None
 
-        # Q4 (Silent Bleed): Structured event ledger
+        # Event ledger
         self.events: List[DomainEvent] = []
         self._record_event("TRIP_CREATED", {
             "origin": asdict(self.origin),
@@ -168,7 +288,6 @@ class Trip:
 
     @property
     def destination(self) -> GeoCoordinate:
-        """Destination cannot be modified once set."""
         return self._locked_destination
 
     def _record_event(self, event_type: str, payload: Dict[str, Any]) -> None:
@@ -182,12 +301,8 @@ class Trip:
         self.events.append(event)
 
     def _verify_invariants(self) -> None:
-        """Enforce domain invariants."""
-        # Invariant A: Destination Integrity
         if self._locked_destination == self.origin:
             raise InvariantViolationError("Destination cannot collapse to origin")
-
-        # Invariant C: Non-Negative Metrics
         if self.distance_km < 0.0:
             raise InvariantViolationError(f"Negative distance violation: {self.distance_km}")
         if self.duration_seconds < 0.0:
@@ -196,7 +311,6 @@ class Trip:
             raise InvariantViolationError(f"Negative fare violation: {self.fare}")
 
     def transition_to(self, target_state: TripState, reason: str = "") -> None:
-        """Validate transition legality and invariants before and after mutation."""
         self._verify_invariants()
 
         allowed = ALLOWED_TRANSITIONS.get(self.state, set())
@@ -234,7 +348,6 @@ class Trip:
             raise IllegalStateTransitionError(
                 f"Cannot update transit telemetry while trip is in state {self.state.value}"
             )
-        # Validate coordinate at ingestion boundary
         coord = GeoCoordinate(lat=lat, lon=lon)
         if distance_delta_km < 0.0:
             raise InvariantViolationError("Distance delta cannot be negative")
@@ -272,7 +385,6 @@ class Trip:
         self.transition_to(TripState.CANCELLED, reason)
 
     def to_dict(self) -> Dict[str, Any]:
-        """Serializes entity to dictionary for Q2 (Sudden Death) snapshotting."""
         return {
             "trip_id": self.trip_id,
             "rider_id": self.rider_id,
@@ -293,7 +405,6 @@ class Trip:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Trip":
-        """Restores entity from dictionary snapshot."""
         trip = cls(
             trip_id=data["trip_id"],
             rider_id=data["rider_id"],
@@ -310,28 +421,16 @@ class Trip:
         trip.duration_seconds = data["duration_seconds"]
         trip.fare = data["fare"]
         trip.cancel_reason = data["cancel_reason"]
-        trip.events = [
-            DomainEvent(**e) for e in data.get("events", [])
-        ]
+        trip.events = [DomainEvent(**e) for e in data.get("events", [])]
         return trip
 
 
 class InMemoryTripRepository:
-    """
-    Hardened Trip Repository addressing:
-    - Q2 (Sudden Death): Snapshot serialization and restoration.
-    - Q3 (The Double Strike): Idempotency key tracking and deduplication.
-    """
-
     def __init__(self) -> None:
         self._trips: Dict[str, Trip] = {}
-        self._idempotency_registry: Dict[str, str] = {}  # key -> trip_id
+        self._idempotency_registry: Dict[str, str] = {}
 
     def request_trip_idempotent(self, payload: TripRequestPayload) -> Tuple[Trip, bool]:
-        """
-        Guards Against Q3 (Double Strike).
-        Returns (trip, is_duplicate). If key already processed, returns existing trip.
-        """
         if payload.idempotency_key in self._idempotency_registry:
             existing_trip_id = self._idempotency_registry[payload.idempotency_key]
             return self._trips[existing_trip_id], True
@@ -357,17 +456,14 @@ class InMemoryTripRepository:
         self._trips[trip.trip_id] = trip
 
     def create_snapshot(self) -> Dict[str, Any]:
-        """Creates atomic serializable snapshot of all memory state."""
         return {
             "trips": {tid: t.to_dict() for tid, t in self._trips.items()},
             "idempotency_registry": dict(self._idempotency_registry),
         }
 
     def restore_from_snapshot(self, snapshot: Dict[str, Any]) -> None:
-        """Restores state completely from snapshot after sudden crash/restart."""
         self._trips.clear()
         self._idempotency_registry.clear()
-
         for tid, t_dict in snapshot.get("trips", {}).items():
             self._trips[tid] = Trip.from_dict(t_dict)
         self._idempotency_registry.update(snapshot.get("idempotency_registry", {}))

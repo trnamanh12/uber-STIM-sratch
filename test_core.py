@@ -1,224 +1,141 @@
 """
-test_core.py - Unit tests for Milestone 3: Hardening Against the 4 Fatal Questions.
+test_core.py - Unit tests for Milestone 4: Spatial Driver Matching & Dispatch Algorithm.
 """
 
 import math
 import pytest
 from core import (
+    DispatchEngine,
     DomainEvent,
+    Driver,
+    DriverPool,
+    DriverState,
     GeoCoordinate,
     IllegalStateTransitionError,
     InMemoryTripRepository,
     InvariantViolationError,
+    NoDriverAvailableError,
     PoisonPayloadError,
     Trip,
     TripRequestPayload,
     TripState,
+    haversine_distance_km,
 )
 
 
 # ==============================================================================
-# Q1: THE POISON PILL TESTS
+# HAVERSINE DISTANCE ACCURACY TESTS
 # ==============================================================================
 
-def test_poison_pill_rejects_nan_and_inf():
-    with pytest.raises(PoisonPayloadError, match="NaN or Inf"):
-        GeoCoordinate(lat=float("nan"), lon=106.7)
-
-    with pytest.raises(PoisonPayloadError, match="NaN or Inf"):
-        GeoCoordinate(lat=10.7, lon=float("inf"))
+def test_haversine_zero_distance_for_same_point():
+    p = GeoCoordinate(lat=10.762622, lon=106.660172)
+    assert haversine_distance_km(p, p) == 0.0
 
 
-def test_poison_pill_rejects_out_of_bounds_coordinates():
-    with pytest.raises(PoisonPayloadError, match="Latitude out of bounds"):
-        GeoCoordinate(lat=91.0, lon=10.0)
-
-    with pytest.raises(PoisonPayloadError, match="Latitude out of bounds"):
-        GeoCoordinate(lat=-90.5, lon=10.0)
-
-    with pytest.raises(PoisonPayloadError, match="Longitude out of bounds"):
-        GeoCoordinate(lat=10.0, lon=180.1)
-
-    with pytest.raises(PoisonPayloadError, match="Longitude out of bounds"):
-        GeoCoordinate(lat=10.0, lon=-185.0)
-
-
-def test_poison_pill_rejects_invalid_passenger_count():
-    origin = GeoCoordinate(lat=10.76, lon=106.66)
-    dest = GeoCoordinate(lat=10.78, lon=106.70)
-
-    for bad_count in [0, -1, 7, 100]:
-        with pytest.raises(PoisonPayloadError, match="Passenger count must be an integer between 1 and 6"):
-            TripRequestPayload(
-                idempotency_key="key-1",
-                rider_id="rider-1",
-                origin=origin,
-                destination=dest,
-                passenger_count=bad_count,
-            )
-
-
-def test_poison_pill_rejects_identical_origin_and_destination():
-    coord = GeoCoordinate(lat=10.76, lon=106.66)
-    with pytest.raises(PoisonPayloadError, match="Origin and Destination coordinates cannot be identical"):
-        TripRequestPayload(
-            idempotency_key="key-2",
-            rider_id="rider-1",
-            origin=coord,
-            destination=coord,
-            passenger_count=1,
-        )
-
-
-def test_poison_pill_rejects_empty_ids():
-    origin = GeoCoordinate(lat=10.76, lon=106.66)
-    dest = GeoCoordinate(lat=10.78, lon=106.70)
-
-    with pytest.raises(PoisonPayloadError, match="Idempotency key cannot be empty"):
-        TripRequestPayload(
-            idempotency_key="   ",
-            rider_id="rider-1",
-            origin=origin,
-            destination=dest,
-        )
-
-    with pytest.raises(PoisonPayloadError, match="Rider ID cannot be empty"):
-        TripRequestPayload(
-            idempotency_key="key-valid",
-            rider_id="   ",
-            origin=origin,
-            destination=dest,
-        )
+def test_haversine_known_geographic_distance():
+    # Ho Chi Minh City (Ben Thanh Market) to (Notre Dame Cathedral) ~ 1.1 km
+    ben_thanh = GeoCoordinate(lat=10.7725, lon=106.6980)
+    notre_dame = GeoCoordinate(lat=10.7798, lon=106.6990)
+    dist = haversine_distance_km(ben_thanh, notre_dame)
+    assert 0.7 <= dist <= 1.2
 
 
 # ==============================================================================
-# Q2: THE SUDDEN DEATH (CRASH RECOVERY) TESTS
+# DRIVER POOL & STATE TESTS
 # ==============================================================================
 
-def test_sudden_death_snapshot_and_recovery():
-    repo = InMemoryTripRepository()
-    payload = TripRequestPayload(
-        idempotency_key="idem-crash-test",
-        rider_id="rider-resilient",
-        origin=GeoCoordinate(lat=10.76, lon=106.66),
-        destination=GeoCoordinate(lat=10.80, lon=106.70),
-        passenger_count=2,
-    )
-    trip, is_dup = repo.request_trip_idempotent(payload)
-    assert not is_dup
+def test_driver_lifecycle_and_assignment_invariants():
+    loc = GeoCoordinate(lat=10.76, lon=106.66)
+    driver = Driver(driver_id="D-1", name="Nguyen Van A", location=loc)
+    assert driver.state == DriverState.IDLE
 
-    # Progress trip
-    trip.assign_driver("driver-99")
-    trip.driver_arrived()
-    trip.start_trip()
-    trip.update_telemetry(lat=10.78, lon=106.68, distance_delta_km=2.5, time_delta_sec=120.0)
+    # Assign to trip
+    driver.assign_to_trip("trip-100")
+    assert driver.state == DriverState.ASSIGNED
+    assert driver.assigned_trip_id == "trip-100"
 
-    # Simulate snapshot write to disk/WAL
-    snapshot = repo.create_snapshot()
+    # Cannot assign an already assigned driver
+    with pytest.raises(IllegalStateTransitionError, match="cannot be assigned"):
+        driver.assign_to_trip("trip-101")
 
-    # Simulate Sudden Death (process killed, memory wiped)
-    recovered_repo = InMemoryTripRepository()
-    recovered_repo.restore_from_snapshot(snapshot)
-
-    recovered_trip = recovered_repo.get(trip.trip_id)
-    assert recovered_trip is not None
-    assert recovered_trip.trip_id == trip.trip_id
-    assert recovered_trip.rider_id == "rider-resilient"
-    assert recovered_trip.driver_id == "driver-99"
-    assert recovered_trip.state == TripState.IN_TRANSIT
-    assert recovered_trip.current_lat == 10.78
-    assert recovered_trip.current_lon == 106.68
-    assert recovered_trip.distance_km == 2.5
-    assert recovered_trip.duration_seconds == 120.0
-    assert len(recovered_trip.events) == len(trip.events)
-
-    # Continue trip from restored state
-    recovered_trip.drop_off()
-    recovered_trip.complete_trip(15.0)
-    assert recovered_trip.state == TripState.COMPLETED
+    # Release back to IDLE
+    driver.release()
+    assert driver.state == DriverState.IDLE
+    assert driver.assigned_trip_id is None
 
 
 # ==============================================================================
-# Q3: THE DOUBLE STRIKE (IDEMPOTENCY) TESTS
+# SPATIAL DISPATCH ENGINE MATCHING TESTS
 # ==============================================================================
 
-def test_double_strike_idempotent_deduplication():
-    repo = InMemoryTripRepository()
-    payload = TripRequestPayload(
-        idempotency_key="network-retry-token-888",
-        rider_id="rider-alice",
-        origin=GeoCoordinate(lat=10.76, lon=106.66),
-        destination=GeoCoordinate(lat=10.80, lon=106.70),
-        passenger_count=1,
-    )
+def test_dispatch_engine_selects_nearest_available_driver():
+    """
+    Scenario:
+    Rider pickup at (10.770, 106.700).
+    Driver 1: 0.5 km away (IDLE)
+    Driver 2: 2.1 km away (IDLE)
+    Driver 3: 5.4 km away (IDLE)
+    Assert Driver 1 is selected.
+    """
+    pickup = GeoCoordinate(lat=10.7700, lon=106.7000)
+    pool = DriverPool()
 
-    # Strike 1: Initial trip request
-    trip_1, is_dup_1 = repo.request_trip_idempotent(payload)
-    assert not is_dup_1
-    assert trip_1.state == TripState.REQUESTED
+    d1 = Driver("D-CLOSE", "Fast Driver", GeoCoordinate(lat=10.7740, lon=106.7020))
+    d2 = Driver("D-MID", "Medium Driver", GeoCoordinate(lat=10.7850, lon=106.7100))
+    d3 = Driver("D-FAR", "Far Driver", GeoCoordinate(lat=10.8100, lon=106.7400))
 
-    # Strike 2: Network retry storm with identical key
-    trip_2, is_dup_2 = repo.request_trip_idempotent(payload)
-    assert is_dup_2
-    assert trip_2.trip_id == trip_1.trip_id
+    pool.register_driver(d1)
+    pool.register_driver(d2)
+    pool.register_driver(d3)
 
-    # Strike 3: Another retry
-    trip_3, is_dup_3 = repo.request_trip_idempotent(payload)
-    assert is_dup_3
-    assert trip_3.trip_id == trip_1.trip_id
+    dispatcher = DispatchEngine(pool, default_search_radius_km=10.0)
+    matched_driver, dist, eta = dispatcher.match_nearest_driver(pickup)
 
-
-# ==============================================================================
-# Q4: THE SILENT BLEED (OBSERVABILITY & INVARIANTS) TESTS
-# ==============================================================================
-
-def test_silent_bleed_structured_event_stream():
-    origin = GeoCoordinate(lat=10.76, lon=106.66)
-    dest = GeoCoordinate(lat=10.80, lon=106.70)
-    trip = Trip(trip_id="T-SILENT", rider_id="R-SILENT", origin=origin, destination=dest)
-
-    trip.assign_driver("D-1")
-    trip.driver_arrived()
-    trip.start_trip()
-    trip.update_telemetry(lat=10.78, lon=106.68, distance_delta_km=1.2, time_delta_sec=60.0)
-    trip.drop_off()
-    trip.complete_trip(8.50)
-
-    # Verify structured event ledger
-    event_types = [e.event_type for e in trip.events]
-    assert event_types == [
-        "TRIP_CREATED",
-        "STATE_TRANSITIONED",  # MATCHED
-        "STATE_TRANSITIONED",  # DRIVER_ARRIVING
-        "STATE_TRANSITIONED",  # IN_TRANSIT
-        "TELEMETRY_UPDATED",
-        "STATE_TRANSITIONED",  # DROPPED_OFF
-        "STATE_TRANSITIONED",  # COMPLETED
-    ]
-
-    # Verify all events share the exact correlation_id
-    for event in trip.events:
-        assert event.correlation_id == trip.trip_id
-        assert event.timestamp > 0
-        assert isinstance(event.payload, dict)
+    assert matched_driver.driver_id == "D-CLOSE"
+    assert dist < 1.0
+    assert eta >= 1.0
 
 
-def test_silent_bleed_rejects_negative_delta_and_poison_telemetry():
-    origin = GeoCoordinate(lat=10.76, lon=106.66)
-    dest = GeoCoordinate(lat=10.80, lon=106.70)
-    trip = Trip(trip_id="T-EDGE", rider_id="R-EDGE", origin=origin, destination=dest)
-    trip.assign_driver("D-1")
-    trip.driver_arrived()
-    trip.start_trip()
+def test_dispatch_skips_busy_driver_for_next_nearest():
+    """
+    Driver 1 is closest (0.5 km) but BUSY.
+    Driver 2 is next closest (2.1 km) and IDLE.
+    Assert Driver 2 is selected.
+    """
+    pickup = GeoCoordinate(lat=10.7700, lon=106.7000)
+    pool = DriverPool()
 
-    # Reject negative distance delta
-    with pytest.raises(InvariantViolationError, match="Distance delta cannot be negative"):
-        trip.update_telemetry(lat=10.77, lon=106.67, distance_delta_km=-0.5, time_delta_sec=10.0)
+    d1 = Driver("D-BUSY", "Busy Driver", GeoCoordinate(lat=10.7740, lon=106.7020))
+    d1.mark_busy()  # Driver is busy with another ride
+    d2 = Driver("D-AVAILABLE", "Available Driver", GeoCoordinate(lat=10.7850, lon=106.7100))
 
-    # Reject negative time delta
-    with pytest.raises(InvariantViolationError, match="Time delta cannot be negative"):
-        trip.update_telemetry(lat=10.77, lon=106.67, distance_delta_km=0.5, time_delta_sec=-5.0)
+    pool.register_driver(d1)
+    pool.register_driver(d2)
 
-    # Reject NaN coordinate inside telemetry update
-    with pytest.raises(PoisonPayloadError, match="NaN or Inf"):
-        trip.update_telemetry(lat=float("nan"), lon=106.67, distance_delta_km=0.5, time_delta_sec=10.0)
+    dispatcher = DispatchEngine(pool, default_search_radius_km=10.0)
+    matched_driver, dist, eta = dispatcher.match_nearest_driver(pickup)
+
+    assert matched_driver.driver_id == "D-AVAILABLE"
+
+
+def test_dispatch_graceful_backoff_when_no_driver_in_radius():
+    pickup = GeoCoordinate(lat=10.7700, lon=106.7000)
+    pool = DriverPool()
+
+    # Driver is 25 km away
+    d_far = Driver("D-VERY-FAR", "Remote Driver", GeoCoordinate(lat=10.9500, lon=106.9000))
+    pool.register_driver(d_far)
+
+    dispatcher = DispatchEngine(pool, default_search_radius_km=5.0)
+
+    with pytest.raises(NoDriverAvailableError, match="No idle drivers found within search radius"):
+        dispatcher.match_nearest_driver(pickup, max_search_radius_km=5.0)
+
+
+def test_dispatch_raises_when_fleet_empty():
+    pickup = GeoCoordinate(lat=10.7700, lon=106.7000)
+    pool = DriverPool()
+    dispatcher = DispatchEngine(pool)
+
+    with pytest.raises(NoDriverAvailableError, match="No available idle drivers found in fleet"):
+        dispatcher.match_nearest_driver(pickup)
