@@ -144,3 +144,15 @@ def test_static_web_hud_served(client_fixture):
     assert res.status_code == 200
     assert "UBER MOBILITY ENGINE" in res.text
     assert "<canvas id=\"mapCanvas\"" in res.text
+
+
+def test_static_assets_served(client_fixture):
+    client, _ = client_fixture
+    res_css = client.get("/styles.css")
+    assert res_css.status_code == 200
+    assert "bottom-sheet" in res_css.text
+
+    res_js = client.get("/app.js")
+    assert res_js.status_code == 200
+    assert "UberMapEngine" in res_js.text
+
