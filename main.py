@@ -1,78 +1,79 @@
 """
-main.py - Runnable CLI demonstration for Milestone 5: Decoupled Service Layer
+main.py - Entry point for Milestone 6: FastAPI REST & WebSocket Telemetry Server.
 """
 
-from internal.domain.driver import Driver
-from internal.domain.trip import GeoCoordinate
-from internal.repository.driver_repo import InMemoryDriverRepository
-from internal.repository.trip_repo import InMemoryTripRepository
-from internal.service.matching import MatchingService
-from internal.service.trip_service import TripService
+import sys
+from fastapi.testclient import TestClient
+import uvicorn
+
+from internal.handler.app import create_app
+
+app = create_app()
 
 
-def main() -> None:
+def run_cli_demo() -> None:
     print("=" * 80)
-    print("UBER MOBILITY ENGINE - MILESTONE 5: DECOUPLED SERVICE & REPOSITORY ARCHITECTURE")
+    print("UBER MOBILITY ENGINE - MILESTONE 6: REAL-TIME REST & WEBSOCKET TELEMETRY")
     print("=" * 80)
 
-    # 1. Instantiate persistence adapters
-    trip_repo = InMemoryTripRepository()
-    driver_repo = InMemoryDriverRepository()
+    client = TestClient(app)
 
-    # 2. Register fleet drivers
-    d1 = Driver("D-01", "Alex Chen", GeoCoordinate(lat=10.7720, lon=106.6980))
-    d2 = Driver("D-02", "Bao Nguyen", GeoCoordinate(lat=10.7850, lon=106.7120))
-    driver_repo.register(d1)
-    driver_repo.register(d2)
-    print(f"[*] Repositories initialized: {len(driver_repo.list_all())} fleet driver(s) registered.")
+    # 1. POST /api/v1/trips
+    print("\n[1. Ingest Ride Request: POST /api/v1/trips]")
+    create_payload = {
+        "idempotency_key": "live-wire-token-42",
+        "rider_id": "rider-alice-transport",
+        "origin": {"lat": 10.7760, "lon": 106.7000},
+        "destination": {"lat": 10.7950, "lon": 106.7250},
+        "passenger_count": 2,
+    }
+    res = client.post("/api/v1/trips", json=create_payload)
+    trip_data = res.json()
+    trip_id = trip_data["trip_id"]
+    print(f"  --> HTTP {res.status_code} Created: Trip ID = {trip_id} | State = {trip_data['state']}")
 
-    # 3. Instantiate domain services
-    matching_service = MatchingService(driver_repo, default_search_radius_km=10.0)
-    trip_service = TripService(trip_repo, driver_repo, matching_service)
+    # 2. Duplicate Idempotency Check
+    print("\n[2. Verify Idempotency Deduplication: POST /api/v1/trips]")
+    res_dup = client.post("/api/v1/trips", json=create_payload)
+    print(f"  --> HTTP {res_dup.status_code} OK: Returned existing trip = {res_dup.json()['trip_id']}")
 
-    # 4. Use Case: Request Trip
-    origin = GeoCoordinate(lat=10.7760, lon=106.7000)
-    destination = GeoCoordinate(lat=10.8000, lon=106.7300)
-    trip, is_dup = trip_service.request_trip(
-        idempotency_key="req-uber-live-01",
-        rider_id="rider-maria",
-        origin=origin,
-        destination=destination,
-        passenger_count=1,
-    )
-    print(f"\n[1. Request Trip] Created Trip ID: {trip.trip_id} | State: {trip.state.value} | Duplicate: {is_dup}")
+    # 3. POST /api/v1/trips/{id}/match
+    print(f"\n[3. Dispatch Match: POST /api/v1/trips/{trip_id}/match]")
+    match_res = client.post(f"/api/v1/trips/{trip_id}/match")
+    match_data = match_res.json()
+    print(f"  --> HTTP {match_res.status_code} OK: Matched {match_data['driver_name']} "
+          f"(ID: {match_data['driver_id']}) | ETA: {match_data['eta_minutes']}m | State: {match_data['trip_state']}")
 
-    # 5. Use Case: Match Driver
-    trip, driver, eta_min = trip_service.match_and_assign_driver(trip.trip_id)
-    print(f"[2. Match Driver] Matched: {driver.name} (ID: {driver.driver_id}) | ETA: {eta_min:.1f} min | Trip State: {trip.state.value}")
+    # 4. WebSocket Streaming: WS /ws/trips/{id}/telemetry
+    print(f"\n[4. Live Telemetry Stream: WS /ws/trips/{trip_id}/telemetry]")
+    with client.websocket_connect(f"/ws/trips/{trip_id}/telemetry") as ws:
+        # Initial frame
+        frame = ws.receive_json()
+        print(f"  --> [WS Received] State: {frame['state']:<15} | Pos: ({frame['current_position']['lat']:.4f}, {frame['current_position']['lon']:.4f})")
 
-    # 6. Use Case: Driver Arrives & Start Transit
-    trip = trip_service.driver_arrived_at_pickup(trip.trip_id)
-    print(f"[3. Arrive Pickup] Driver at pickup | Trip State: {trip.state.value}")
+        # Command driver to arrive & start
+        ws.send_json({"action": "start"})
+        frame = ws.receive_json()
+        print(f"  --> [WS Received] State: {frame['state']:<15} | Action: Passenger Picked Up")
 
-    trip = trip_service.start_trip(trip.trip_id)
-    print(f"[4. Start Transit] Passenger onboard | Trip State: {trip.state.value} | Driver State: {driver.state.value}")
+        # Step vehicle forward
+        for step in range(1, 4):
+            ws.send_json({"action": "step"})
+            frame = ws.receive_json()
+            print(f"  --> [WS Received] State: {frame['state']:<15} | Pos: ({frame['current_position']['lat']:.4f}, {frame['current_position']['lon']:.4f}) | Dist: {frame['distance_km']}km | Fare: ${frame['fare']:.2f}")
 
-    # 7. Use Case: Telemetry Update
-    trip = trip_service.update_telemetry(
-        trip_id=trip.trip_id,
-        lat=10.7880,
-        lon=106.7150,
-        distance_delta_km=2.4,
-        time_delta_sec=300.0,
-    )
-    print(f"[5. Telemetry] Position: ({trip.current_lat:.4f}, {trip.current_lon:.4f}) | Distance: {trip.distance_km:.1f} km | Duration: {trip.duration_seconds:.0f}s")
+    # 5. GET /api/v1/trips/{id}
+    print(f"\n[5. Query Trip State: GET /api/v1/trips/{trip_id}]")
+    get_res = client.get(f"/api/v1/trips/{trip_id}")
+    final_trip = get_res.json()
+    print(f"  --> HTTP {get_res.status_code} OK: Final State = {final_trip['state']} | Fare = ${final_trip['fare']:.2f}")
 
-    # 8. Use Case: Drop-Off & Complete Trip
-    trip = trip_service.drop_off_rider(trip.trip_id)
-    print(f"[6. Drop-off] Destination reached | Trip State: {trip.state.value}")
-
-    trip = trip_service.complete_trip(trip.trip_id, base_fare=2.50, per_km_rate=1.20)
-    print(f"[7. Complete Trip] Final State: {trip.state.value} | Settled Fare: ${trip.fare:.2f} | Driver State: {driver.state.value}")
-
-    print("\n[✓] Complete Use-Case Workflow Verified Across Architectural Boundaries.")
+    print("\n[✓] Real-time Transport Layer (REST + WebSockets) Operational & Verified.")
     print("=" * 80)
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 1 and sys.argv[1] == "--serve":
+        uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
+    else:
+        run_cli_demo()
