@@ -46,6 +46,12 @@ from internal.domain.offer import (
 from internal.service.cascading_dispatch import (
     CascadingDispatchService,
 )
+from internal.domain.spatial_index import (
+    H3SpatialIndex,
+)
+from internal.domain.heatmap import (
+    H3SurgeHeatmap,
+)
 
 __all__ = [
     "DomainError",
@@ -74,4 +80,6 @@ __all__ = [
     "OfferState",
     "OfferExpiredError",
     "CascadingDispatchService",
+    "H3SpatialIndex",
+    "H3SurgeHeatmap",
 ]

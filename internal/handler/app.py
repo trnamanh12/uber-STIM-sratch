@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from internal.domain.driver import Driver, GeoCoordinate
+from internal.domain.heatmap import H3SurgeHeatmap
 from internal.domain.trip import (
     IllegalStateTransitionError,
     InvariantViolationError,
@@ -68,12 +69,14 @@ def create_app(
     matching_service = MatchingService(_driver_repo, default_search_radius_km=15.0)
     _trip_service = trip_service or TripService(_trip_repo, _driver_repo, matching_service)
     _cascading_service = CascadingDispatchService(_trip_repo, _driver_repo, default_search_radius_km=15.0)
+    _heatmap = H3SurgeHeatmap(resolution=8)
 
     # Store in app state
     app.state.trip_service = _trip_service
     app.state.trip_repo = _trip_repo
     app.state.driver_repo = _driver_repo
     app.state.cascading_service = _cascading_service
+    app.state.heatmap = _heatmap
 
     # --------------------------------------------------------------------------
     # Exception Handlers: Domain Exceptions -> Standard HTTP Status Codes
@@ -139,8 +142,11 @@ def create_app(
     @app.post("/api/v1/trips", response_model=TripResponse, status_code=status.HTTP_201_CREATED)
     def request_trip(req: TripCreateRequest):
         svc: TripService = app.state.trip_service
+        heatmap: H3SurgeHeatmap = app.state.heatmap
         origin_coord = GeoCoordinate(lat=req.origin.lat, lon=req.origin.lon)
         dest_coord = GeoCoordinate(lat=req.destination.lat, lon=req.destination.lon)
+
+        heatmap.record_demand(origin_coord)
 
         trip, is_dup = svc.request_trip(
             idempotency_key=req.idempotency_key,
@@ -245,6 +251,15 @@ def create_app(
             created_at=offer.created_at,
             expires_at=offer.expires_at,
         )
+
+    @app.get("/api/v1/spatial/heatmap")
+    def get_spatial_heatmap():
+        heatmap: H3SurgeHeatmap = app.state.heatmap
+        driver_repo: DriverRepository = app.state.driver_repo
+        for d in driver_repo.list_available():
+            c = heatmap.coord_to_cell(d.location)
+            heatmap.update_driver_supply(c, len(driver_repo.list_available()))
+        return heatmap.get_heatmap_summary()
 
     # --------------------------------------------------------------------------
     # Real-Time WebSocket Telemetry Stream (1Hz / State Streaming)
