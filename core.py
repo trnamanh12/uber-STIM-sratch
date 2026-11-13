@@ -52,6 +52,19 @@ from internal.domain.spatial_index import (
 from internal.domain.heatmap import (
     H3SurgeHeatmap,
 )
+from internal.domain.ledger import (
+    Account,
+    AccountType,
+    Posting,
+    PostingDirection,
+    JournalEntry,
+    DoubleEntryLedgerError,
+    UnbalancedJournalEntryError,
+    InsufficientFundsError,
+)
+from internal.service.billing_service import (
+    BillingService,
+)
 
 __all__ = [
     "DomainError",
@@ -82,4 +95,13 @@ __all__ = [
     "CascadingDispatchService",
     "H3SpatialIndex",
     "H3SurgeHeatmap",
+    "Account",
+    "AccountType",
+    "Posting",
+    "PostingDirection",
+    "JournalEntry",
+    "DoubleEntryLedgerError",
+    "UnbalancedJournalEntryError",
+    "InsufficientFundsError",
+    "BillingService",
 ]

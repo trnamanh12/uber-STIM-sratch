@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from internal.domain.driver import Driver, GeoCoordinate
 from internal.domain.heatmap import H3SurgeHeatmap
+from internal.domain.ledger import Account, AccountType
 from internal.domain.trip import (
     IllegalStateTransitionError,
     InvariantViolationError,
@@ -30,7 +31,9 @@ from internal.handler.schemas import (
     TripResponse,
 )
 from internal.repository.driver_repo import DriverRepository, InMemoryDriverRepository
+from internal.repository.ledger_repo import InMemoryLedgerRepository, LedgerRepository
 from internal.repository.trip_repo import InMemoryTripRepository, TripRepository
+from internal.service.billing_service import BillingService
 from internal.service.cascading_dispatch import CascadingDispatchService
 from internal.service.matching import MatchingService, NoDriverAvailableError
 from internal.service.trip_service import TripNotFoundError, TripService
@@ -70,6 +73,11 @@ def create_app(
     _trip_service = trip_service or TripService(_trip_repo, _driver_repo, matching_service)
     _cascading_service = CascadingDispatchService(_trip_repo, _driver_repo, default_search_radius_km=15.0)
     _heatmap = H3SurgeHeatmap(resolution=8)
+    _ledger_repo = InMemoryLedgerRepository()
+    _billing_service = BillingService(_ledger_repo)
+
+    # Seed default platform revenue account
+    _ledger_repo.create_account(Account("ACC-PLATFORM", "UBER", AccountType.REVENUE, 0))
 
     # Store in app state
     app.state.trip_service = _trip_service
@@ -77,6 +85,8 @@ def create_app(
     app.state.driver_repo = _driver_repo
     app.state.cascading_service = _cascading_service
     app.state.heatmap = _heatmap
+    app.state.ledger_repo = _ledger_repo
+    app.state.billing_service = _billing_service
 
     # --------------------------------------------------------------------------
     # Exception Handlers: Domain Exceptions -> Standard HTTP Status Codes
@@ -192,6 +202,28 @@ def create_app(
     def complete_trip(trip_id: str, surge_multiplier: Optional[float] = None):
         svc: TripService = app.state.trip_service
         trip = svc.complete_trip(trip_id, surge_multiplier=surge_multiplier)
+
+        # Settle in double-entry ledger using integer cents
+        billing: BillingService = app.state.billing_service
+        ledger_repo: LedgerRepository = app.state.ledger_repo
+
+        rider_acc_id = f"ACC-RIDER-{trip.rider_id}"
+        driver_acc_id = f"ACC-DRIVER-{trip.driver_id or 'UNKNOWN'}"
+
+        if not ledger_repo.get_account(rider_acc_id):
+            ledger_repo.create_account(Account(rider_acc_id, trip.rider_id, AccountType.ASSET, 10000))
+        if not ledger_repo.get_account(driver_acc_id):
+            ledger_repo.create_account(Account(driver_acc_id, trip.driver_id or "UNKNOWN", AccountType.LIABILITY, 0))
+
+        fare_cents = max(100, int(round(trip.fare * 100)))
+        billing.settle_trip_fare(
+            trip_id=trip.trip_id,
+            rider_account_id=rider_acc_id,
+            driver_account_id=driver_acc_id,
+            platform_account_id="ACC-PLATFORM",
+            fare_cents=fare_cents,
+            platform_fee_percent=0.20,
+        )
         return to_trip_response(trip)
 
     # --------------------------------------------------------------------------
@@ -260,6 +292,20 @@ def create_app(
             c = heatmap.coord_to_cell(d.location)
             heatmap.update_driver_supply(c, len(driver_repo.list_available()))
         return heatmap.get_heatmap_summary()
+
+    @app.get("/api/v1/ledger/accounts/{account_id}")
+    def get_ledger_account(account_id: str):
+        ledger_repo: LedgerRepository = app.state.ledger_repo
+        acc = ledger_repo.get_account(account_id)
+        if not acc:
+            raise HTTPException(status_code=404, detail=f"Account not found: {account_id}")
+        return {
+            "account_id": acc.account_id,
+            "holder_id": acc.holder_id,
+            "account_type": acc.account_type.value,
+            "balance_cents": acc.balance_cents,
+            "balance_formatted": f"${acc.balance_cents / 100:.2f}",
+        }
 
     # --------------------------------------------------------------------------
     # Real-Time WebSocket Telemetry Stream (1Hz / State Streaming)
