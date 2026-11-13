@@ -130,6 +130,10 @@ class Trip:
         self.fare: float = 0.0
         self.cancel_reason: Optional[str] = None
 
+        # Waypoint Detour Support
+        self.waypoints: List[GeoCoordinate] = []
+        self.visited_waypoints: List[GeoCoordinate] = []
+
         # Q4 Observability: Structured Event Ledger
         self.events: List[DomainEvent] = []
         self._record_event("TRIP_CREATED", {
@@ -220,7 +224,46 @@ class Trip:
         })
         self._verify_invariants()
 
+    def add_waypoint(self, waypoint: GeoCoordinate) -> None:
+        """
+        Adds an intermediate detour waypoint.
+        Preserves Invariant A: Destination Integrity (destination is untouched).
+        """
+        self._verify_invariants()
+        if self.state in {TripState.DROPPED_OFF, TripState.COMPLETED, TripState.CANCELLED}:
+            raise IllegalStateTransitionError(
+                f"Cannot add waypoint to trip in state: {self.state.value}"
+            )
+        if waypoint == self.destination:
+            raise InvariantViolationError("Waypoint cannot be identical to final destination")
+        if waypoint == self.origin:
+            raise InvariantViolationError("Waypoint cannot be identical to trip origin")
+
+        self.waypoints.append(waypoint)
+        self._record_event("WAYPOINT_ADDED", {
+            "waypoint": asdict(waypoint),
+            "waypoint_count": len(self.waypoints),
+        })
+        self._verify_invariants()
+
+    def reach_waypoint(self, waypoint_index: int) -> None:
+        """Marks an intermediate waypoint as reached."""
+        if not (0 <= waypoint_index < len(self.waypoints)):
+            raise InvariantViolationError(f"Invalid waypoint index: {waypoint_index}")
+        wp = self.waypoints[waypoint_index]
+        if wp not in self.visited_waypoints:
+            self.visited_waypoints.append(wp)
+            self._record_event("WAYPOINT_REACHED", {
+                "waypoint_index": waypoint_index,
+                "waypoint": asdict(wp),
+            })
+
     def drop_off(self) -> None:
+        if len(self.visited_waypoints) < len(self.waypoints):
+            raise InvariantViolationError(
+                f"Cannot drop off at destination before visiting all waypoints! "
+                f"Visited {len(self.visited_waypoints)} of {len(self.waypoints)}"
+            )
         self.current_lat = self.destination.lat
         self.current_lon = self.destination.lon
         self.transition_to(TripState.DROPPED_OFF, "Arrived at destination")
@@ -253,6 +296,8 @@ class Trip:
             "duration_seconds": self.duration_seconds,
             "fare": self.fare,
             "cancel_reason": self.cancel_reason,
+            "waypoints": [asdict(w) for w in self.waypoints],
+            "visited_waypoints": [asdict(w) for w in self.visited_waypoints],
             "events": [asdict(e) for e in self.events],
         }
 
@@ -274,5 +319,7 @@ class Trip:
         trip.duration_seconds = data["duration_seconds"]
         trip.fare = data["fare"]
         trip.cancel_reason = data["cancel_reason"]
+        trip.waypoints = [GeoCoordinate(**w) for w in data.get("waypoints", [])]
+        trip.visited_waypoints = [GeoCoordinate(**w) for w in data.get("visited_waypoints", [])]
         trip.events = [DomainEvent(**e) for e in data.get("events", [])]
         return trip

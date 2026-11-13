@@ -5,6 +5,7 @@ internal/service/trip_service.py - Trip Lifecycle Orchestration Service.
 from typing import Optional, Tuple
 import uuid
 from internal.domain.driver import Driver
+from internal.domain.pricing import SurgePricingEngine
 from internal.domain.trip import (
     DomainError,
     GeoCoordinate,
@@ -33,10 +34,12 @@ class TripService:
         trip_repo: TripRepository,
         driver_repo: DriverRepository,
         matching_service: MatchingService,
+        pricing_engine: Optional[SurgePricingEngine] = None,
     ) -> None:
         self.trip_repo = trip_repo
         self.driver_repo = driver_repo
         self.matching_service = matching_service
+        self.pricing_engine = pricing_engine or SurgePricingEngine()
 
     def request_trip(
         self,
@@ -121,6 +124,20 @@ class TripService:
         self.trip_repo.save(trip)
         return trip
 
+    def add_waypoint(self, trip_id: str, waypoint: GeoCoordinate) -> Trip:
+        """Use case: Add intermediate detour stop."""
+        trip = self.get_trip(trip_id)
+        trip.add_waypoint(waypoint)
+        self.trip_repo.save(trip)
+        return trip
+
+    def reach_waypoint(self, trip_id: str, waypoint_index: int) -> Trip:
+        """Use case: Vehicle arrives at detour stop."""
+        trip = self.get_trip(trip_id)
+        trip.reach_waypoint(waypoint_index)
+        self.trip_repo.save(trip)
+        return trip
+
     def drop_off_rider(self, trip_id: str) -> Trip:
         """Use case: Driver drops off rider at destination."""
         trip = self.get_trip(trip_id)
@@ -128,10 +145,15 @@ class TripService:
         self.trip_repo.save(trip)
         return trip
 
-    def complete_trip(self, trip_id: str, base_fare: float = 2.50, per_km_rate: float = 1.20) -> Trip:
-        """Use case: Complete trip, settle fare, and release driver back to IDLE."""
+    def complete_trip(self, trip_id: str, surge_multiplier: Optional[float] = None) -> Trip:
+        """Use case: Complete trip, settle fare with surge pricing, and release driver back to IDLE."""
         trip = self.get_trip(trip_id)
-        final_fare = round(base_fare + (trip.distance_km * per_km_rate), 2)
+        multiplier = surge_multiplier if surge_multiplier is not None else 1.0
+        final_fare = self.pricing_engine.calculate_fare(
+            distance_km=trip.distance_km,
+            duration_seconds=trip.duration_seconds,
+            surge_multiplier=multiplier,
+        )
         trip.complete_trip(final_fare)
 
         if trip.driver_id:

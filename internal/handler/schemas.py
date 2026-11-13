@@ -23,6 +23,10 @@ class CancelTripRequest(BaseModel):
     reason: str = Field(..., min_length=1, description="Reason for cancellation")
 
 
+class AddWaypointRequest(BaseModel):
+    waypoint: GeoCoordinateSchema
+
+
 class TripResponse(BaseModel):
     trip_id: str
     rider_id: str
@@ -35,6 +39,8 @@ class TripResponse(BaseModel):
     duration_seconds: float
     fare: float
     cancel_reason: Optional[str] = None
+    waypoints: list[GeoCoordinateSchema] = Field(default_factory=list)
+    visited_waypoints: list[GeoCoordinateSchema] = Field(default_factory=list)
 
 
 class MatchDriverResponse(BaseModel):

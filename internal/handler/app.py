@@ -19,6 +19,7 @@ from internal.domain.trip import (
     TripState,
 )
 from internal.handler.schemas import (
+    AddWaypointRequest,
     CancelTripRequest,
     GeoCoordinateSchema,
     MatchDriverResponse,
@@ -123,6 +124,8 @@ def create_app(
             duration_seconds=round(t.duration_seconds, 1),
             fare=round(t.fare, 2),
             cancel_reason=t.cancel_reason,
+            waypoints=[GeoCoordinateSchema(lat=w.lat, lon=w.lon) for w in t.waypoints],
+            visited_waypoints=[GeoCoordinateSchema(lat=w.lat, lon=w.lon) for w in t.visited_waypoints],
         )
 
     # --------------------------------------------------------------------------
@@ -165,6 +168,19 @@ def create_app(
     def cancel_trip(trip_id: str, req: CancelTripRequest):
         svc: TripService = app.state.trip_service
         trip = svc.cancel_trip(trip_id, reason=req.reason)
+        return to_trip_response(trip)
+
+    @app.post("/api/v1/trips/{trip_id}/waypoints", response_model=TripResponse)
+    def add_waypoint(trip_id: str, req: AddWaypointRequest):
+        svc: TripService = app.state.trip_service
+        wp = GeoCoordinate(lat=req.waypoint.lat, lon=req.waypoint.lon)
+        trip = svc.add_waypoint(trip_id, wp)
+        return to_trip_response(trip)
+
+    @app.post("/api/v1/trips/{trip_id}/complete", response_model=TripResponse)
+    def complete_trip(trip_id: str, surge_multiplier: Optional[float] = None):
+        svc: TripService = app.state.trip_service
+        trip = svc.complete_trip(trip_id, surge_multiplier=surge_multiplier)
         return to_trip_response(trip)
 
     # --------------------------------------------------------------------------

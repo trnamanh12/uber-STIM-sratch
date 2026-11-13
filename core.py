@@ -34,6 +34,10 @@ from internal.service.trip_service import (
     TripService,
     TripNotFoundError,
 )
+from internal.domain.pricing import (
+    PricingConfig,
+    SurgePricingEngine,
+)
 
 __all__ = [
     "DomainError",
@@ -56,4 +60,6 @@ __all__ = [
     "NoDriverAvailableError",
     "TripService",
     "TripNotFoundError",
+    "PricingConfig",
+    "SurgePricingEngine",
 ]
